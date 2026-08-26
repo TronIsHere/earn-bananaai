@@ -14,7 +14,10 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => Boolean(token?.id),
+      authorized: ({ token, req }) => {
+        if (req.nextUrl.pathname === "/") return true;
+        return Boolean(token?.id);
+      },
     },
     pages: {
       signIn: "/login",
