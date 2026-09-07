@@ -67,7 +67,8 @@ export function AdminSubmissionsPanel() {
           <p className="mt-1 max-w-2xl text-sm text-white/55">
             SLA بررسی حداکثر ۴۸ ساعت است. قدیمی‌ترین ارسال‌ها بالاترند. برای
             ایراد قابل اصلاح (مثل هشتگ جا مانده) رد با امکان یک‌بار ارسال مجدد
-            بزنید تا سازنده کارش را از دست ندهد.
+            بزنید تا سازنده کارش را از دست ندهد. اگر تأیید را اشتباه زدید، همان
+            کارت یا تب بازدید روز ۷ دکمه برگشت تأیید دارد.
           </p>
         </div>
         <button
@@ -126,9 +127,13 @@ function ReviewCard({
   const alreadyResubmitted =
     (submission.resubmitCount ?? 0) >= MAX_SUBMISSION_RESUBMITS;
   const [allowResubmit, setAllowResubmit] = useState(!alreadyResubmitted);
-  const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
+  const [saving, setSaving] = useState<"approve" | "reject" | "revoke" | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [justApproved, setJustApproved] = useState(false);
+  const [revokedNotice, setRevokedNotice] = useState<string | null>(null);
 
   const creatorName = submission.user
     ? `${submission.user.firstName} ${submission.user.lastName}`.trim()
@@ -137,13 +142,14 @@ function ReviewCard({
     submission.campaign?.basePayoutToman ?? submission.basePayoutToman;
   const willAllowResubmit = allowResubmit && !alreadyResubmitted;
 
-  const review = async (decision: "approve" | "reject") => {
+  const review = async (decision: "approve" | "reject" | "revoke") => {
     if (decision === "reject" && reason.trim().length < 3) {
       setError("دلیل رد کردن را بنویسید");
       return;
     }
     setSaving(decision);
     setError(null);
+    if (decision !== "revoke") setRevokedNotice(null);
     try {
       const res = await fetch(`/api/admin/earn/submissions/${submission.id}`, {
         method: "PATCH",
@@ -151,16 +157,25 @@ function ReviewCard({
         body: JSON.stringify(
           decision === "approve"
             ? { decision: "approve" }
-            : {
-                decision: "reject",
-                reason: reason.trim(),
-                allowResubmit: willAllowResubmit,
-              }
+            : decision === "revoke"
+              ? { decision: "revoke" }
+              : {
+                  decision: "reject",
+                  reason: reason.trim(),
+                  allowResubmit: willAllowResubmit,
+                }
         ),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error || "بررسی ناموفق بود");
+        return;
+      }
+      if (decision === "revoke") {
+        setJustApproved(false);
+        setDone(null);
+        setRejecting(false);
+        setRevokedNotice("تأیید لغو شد و پاداش پایه از کیف پول برگشت.");
         return;
       }
       setDone(
@@ -170,6 +185,10 @@ function ReviewCard({
             ? "رد شد؛ سازنده یک‌بار می‌تواند اصلاح کند."
             : "ارسال رد شد."
       );
+      if (decision === "approve") {
+        setJustApproved(true);
+        return;
+      }
       window.setTimeout(() => onDone(submission.id), 1000);
     } catch {
       setError("بررسی ناموفق بود");
@@ -250,16 +269,50 @@ function ReviewCard({
         />
       )}
 
-      {alreadyResubmitted && submission.reviewerNote && (
+      {submission.reviewerNote && (
         <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-sm text-amber-100/90">
-          درخواست اصلاح قبلی: {submission.reviewerNote}
+          {alreadyResubmitted ? "درخواست اصلاح قبلی: " : ""}
+          {submission.reviewerNote}
+        </p>
+      )}
+
+      {revokedNotice && !justApproved && !done && (
+        <p className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
+          {revokedNotice}
         </p>
       )}
 
       {done ? (
-        <p className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
-          {done}
-        </p>
+        <div className="mt-4 space-y-3">
+          <p className="rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
+            {done}
+          </p>
+          {justApproved && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void review("revoke")}
+                disabled={saving !== null}
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
+              >
+                {saving === "revoke" ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="size-4" />
+                )}
+                برگشت تأیید
+              </button>
+              <button
+                type="button"
+                onClick={() => onDone(submission.id)}
+                disabled={saving !== null}
+                className="rounded-2xl border border-white/10 px-4 py-2.5 text-sm text-white/60 hover:bg-white/5 disabled:opacity-50"
+              >
+                بستن
+              </button>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="mt-4 space-y-3">
           {rejecting && (

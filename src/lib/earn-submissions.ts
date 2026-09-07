@@ -1,6 +1,10 @@
 import "server-only";
 import mongoose, { type Types } from "mongoose";
-import { creditEarnWallet, EarnWalletError } from "@/lib/earn-wallet";
+import {
+  creditEarnWallet,
+  debitEarnWallet,
+  EarnWalletError,
+} from "@/lib/earn-wallet";
 import connectDB from "@/lib/mongodb";
 import { isOurProofObjectUrl } from "@/lib/s3/client";
 import {
@@ -30,8 +34,10 @@ export type SubmissionErrorCode =
   | "CAP_REACHED"
   | "SUBMISSION_NOT_FOUND"
   | "ALREADY_REVIEWED"
+  | "NOT_REVOCABLE"
   | "RESUBMIT_NOT_ALLOWED"
   | "BUDGET_EXCEEDED"
+  | "INSUFFICIENT_BALANCE"
   | "USER_NOT_FOUND";
 
 export class SubmissionError extends Error {
@@ -358,6 +364,114 @@ export async function approveEarnSubmission(params: {
   await EarnSubmission.findByIdAndUpdate(submissionId, {
     $set: { basePaidAt: now },
   });
+}
+
+const REVOCABLE_STATUSES: EarnSubmissionStatus[] = [
+  "bonus_pending",
+  "approved",
+];
+
+/**
+ * Undoes base-payout approval: claw back wallet credit and return the
+ * submission to the pending review queue. Not allowed after day-7 finalize.
+ */
+export async function revokeEarnSubmissionApproval(params: {
+  submissionId: string;
+  reviewerId: string;
+}) {
+  const { submissionId, reviewerId } = params;
+  await connectDB();
+
+  const submission = await EarnSubmission.findById(submissionId);
+  if (!submission) {
+    throw new SubmissionError("ارسال پیدا نشد", "SUBMISSION_NOT_FOUND", 404);
+  }
+  if (submission.status === "finalized" || submission.finalizedAt) {
+    throw new SubmissionError(
+      "ارسال نهایی شده و امکان برگشت تأیید نیست.",
+      "NOT_REVOCABLE",
+      409
+    );
+  }
+  if (!REVOCABLE_STATUSES.includes(submission.status)) {
+    throw new SubmissionError(
+      "فقط ارسال‌های تأییدشده (قبل از ثبت بازدید روز ۷) قابل برگشت هستند.",
+      "NOT_REVOCABLE",
+      409
+    );
+  }
+
+  const basePayoutToman = submission.basePayoutToman;
+  const previousStatus = submission.status;
+  const previousReviewedBy = submission.reviewedBy;
+  const previousReviewedAt = submission.reviewedAt;
+  const previousReviewerNote = submission.reviewerNote;
+  const previousBasePaidAt = submission.basePaidAt;
+
+  const claimed = await EarnSubmission.findOneAndUpdate(
+    {
+      _id: submissionId,
+      status: { $in: REVOCABLE_STATUSES },
+      finalizedAt: null,
+      day7Views: null,
+    },
+    {
+      $set: {
+        status: "pending",
+        reviewedBy: reviewerId,
+        reviewedAt: new Date(),
+        reviewerNote: "تأیید و واریز پایه لغو شد.",
+        basePayoutToman: 0,
+        basePaidAt: null,
+      },
+    },
+    { new: true }
+  );
+
+  if (!claimed) {
+    throw new SubmissionError(
+      "این ارسال دیگر قابل برگشت نیست.",
+      "NOT_REVOCABLE",
+      409
+    );
+  }
+
+  try {
+    if (basePayoutToman > 0) {
+      await debitEarnWallet({
+        userId: claimed.userId,
+        campaignId: claimed.campaignId,
+        amountToman: basePayoutToman,
+      });
+    }
+  } catch (error) {
+    await EarnSubmission.findByIdAndUpdate(submissionId, {
+      $set: {
+        status: previousStatus,
+        reviewedBy: previousReviewedBy,
+        reviewedAt: previousReviewedAt,
+        reviewerNote: previousReviewerNote,
+        basePayoutToman,
+        basePaidAt: previousBasePaidAt,
+      },
+    });
+    if (error instanceof EarnWalletError) {
+      if (error.code === "INSUFFICIENT_BALANCE") {
+        throw new SubmissionError(
+          "موجودی کیف پول برای برگشت پاداش کافی نیست. اگر کاربر درخواست واریز دارد، ابتدا آن را رد کنید.",
+          "INSUFFICIENT_BALANCE",
+          409
+        );
+      }
+      if (error.code === "USER_NOT_FOUND") {
+        throw new SubmissionError("کاربر پیدا نشد", "USER_NOT_FOUND", 404);
+      }
+      if (error.code === "CAMPAIGN_NOT_FOUND") {
+        throw new SubmissionError("کمپین پیدا نشد", "CAMPAIGN_NOT_FOUND", 404);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function rejectEarnSubmission(params: {

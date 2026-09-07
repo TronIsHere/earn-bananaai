@@ -116,6 +116,75 @@ export async function creditEarnWallet(
   };
 }
 
+/**
+ * Reverses `creditEarnWallet`. Fails if the user no longer has enough available
+ * balance (already reserved for a payout or paid out). Campaign spend is
+ * decremented and floored at 0.
+ */
+export async function debitEarnWallet(
+  params: CreditEarnWalletParams
+): Promise<CreditEarnWalletResult> {
+  const { userId, campaignId, amountToman } = params;
+  assertPositiveToman(amountToman);
+  await connectDB();
+
+  const user = await User.findOneAndUpdate(
+    { _id: userId, earnWalletBalance: { $gte: amountToman } },
+    {
+      $inc: {
+        earnWalletBalance: -amountToman,
+        earnWalletLifetimeEarned: -amountToman,
+      },
+    },
+    { new: true }
+  );
+
+  if (!user) {
+    const exists = await User.exists({ _id: userId });
+    throw new EarnWalletError(
+      exists ? "Insufficient wallet balance" : "User not found",
+      exists ? "INSUFFICIENT_BALANCE" : "USER_NOT_FOUND"
+    );
+  }
+
+  if (user.earnWalletLifetimeEarned < 0) {
+    user.earnWalletLifetimeEarned = 0;
+    await User.findByIdAndUpdate(userId, {
+      $max: { earnWalletLifetimeEarned: 0 },
+    });
+  }
+
+  const campaign = await EarnCampaign.findByIdAndUpdate(
+    campaignId,
+    { $inc: { spentBudgetToman: -amountToman } },
+    { new: true }
+  );
+
+  if (!campaign) {
+    await User.findByIdAndUpdate(userId, {
+      $inc: {
+        earnWalletBalance: amountToman,
+        earnWalletLifetimeEarned: amountToman,
+      },
+    });
+    throw new EarnWalletError("Campaign not found", "CAMPAIGN_NOT_FOUND");
+  }
+
+  if (campaign.spentBudgetToman < 0) {
+    campaign.spentBudgetToman = 0;
+    await EarnCampaign.findByIdAndUpdate(campaignId, {
+      $max: { spentBudgetToman: 0 },
+    });
+  }
+
+  return {
+    balance: user.earnWalletBalance,
+    lifetimeEarned: Math.max(0, user.earnWalletLifetimeEarned),
+    spentBudgetToman: campaign.spentBudgetToman,
+    totalBudgetToman: campaign.totalBudgetToman,
+  };
+}
+
 export interface EarnWalletSnapshot {
   available: number;
   lifetimeEarned: number;

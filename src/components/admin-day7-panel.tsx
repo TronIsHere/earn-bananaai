@@ -6,6 +6,7 @@ import {
   Eye,
   Loader2,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import { SectionBadge } from "@/components/section-badge";
 import { TierChip } from "@/components/tier-chip";
@@ -93,7 +94,8 @@ export function AdminDay7Panel() {
           <p className="mt-1 max-w-2xl text-sm text-white/55">
             تعداد بازدید را وارد کنید. سیستم پاداش همه سطح‌های رسیده‌شده را جمع
             می‌کند و تا سقف هر ویدیو منهای پایه محدود می‌کند، سپس به کیف پول
-            واریز و ارسال را نهایی می‌کند.
+            واریز و ارسال را نهایی می‌کند. اگر تأیید پایه را اشتباه زده‌اید،
+            قبل از ثبت بازدید می‌توانید تأیید را برگردانید.
           </p>
         </div>
         <button
@@ -144,6 +146,8 @@ function Day7Card({
 }) {
   const [viewsInput, setViewsInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
@@ -211,6 +215,29 @@ function Day7Card({
       setError("ثبت بازدید ناموفق بود");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const revoke = async () => {
+    setRevoking(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/earn/submissions/${submission.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "revoke" }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error || "برگشت تأیید ناموفق بود");
+        return;
+      }
+      setDone("تأیید لغو شد. پاداش پایه از کیف پول برگشت و ارسال به صف بررسی رفت.");
+      window.setTimeout(() => onFinalized(submission.id), 1200);
+    } catch {
+      setError("برگشت تأیید ناموفق بود");
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -303,6 +330,7 @@ function Day7Card({
               value={viewsInput}
               onChange={(e) => setViewsInput(e.target.value.replace(/[^\d]/g, ""))}
               placeholder="مثلا ۳۴۰۰"
+              disabled={saving || revoking || confirmRevoke}
               className={cn(
                 "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder:text-white/35",
                 formFocus
@@ -312,7 +340,7 @@ function Day7Card({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={saving || views == null}
+            disabled={saving || revoking || confirmRevoke || views == null}
             className={cn(brandCta, "px-4 py-2.5 text-sm disabled:opacity-50")}
           >
             {saving ? (
@@ -333,6 +361,55 @@ function Day7Card({
           پاداش: {formatToman(previewBonus)} تومان
           {capped ? " (سقف اعمال شد)" : ""}
         </p>
+      )}
+
+      {!done && (
+        <div className="mt-3 space-y-2">
+          {confirmRevoke ? (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 px-3 py-3">
+              <p className="text-sm text-amber-100/90">
+                پاداش پایه از کیف پول کاربر کم می‌شود و ارسال به صف بررسی
+                برمی‌گردد.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void revoke()}
+                  disabled={saving || revoking}
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
+                >
+                  {revoking ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-4" />
+                  )}
+                  بله، برگردان
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmRevoke(false);
+                    setError(null);
+                  }}
+                  disabled={revoking}
+                  className="rounded-2xl border border-white/10 px-4 py-2 text-sm text-white/60 hover:bg-white/5 disabled:opacity-50"
+                >
+                  انصراف
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmRevoke(true)}
+              disabled={saving || revoking}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-white/10 px-3 py-2 text-xs text-white/55 hover:border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-100 disabled:opacity-50"
+            >
+              <RotateCcw className="size-3.5" />
+              لغو تأیید و برگشت پاداش پایه
+            </button>
+          )}
+        </div>
       )}
 
       {error && (

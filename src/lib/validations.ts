@@ -115,6 +115,9 @@ export const reviewSubmissionSchema = z.discriminatedUnion("decision", [
     decision: z.literal("approve"),
   }),
   z.object({
+    decision: z.literal("revoke"),
+  }),
+  z.object({
     decision: z.literal("reject"),
     reason: z
       .string()

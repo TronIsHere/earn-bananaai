@@ -7,6 +7,7 @@ import {
 import {
   approveEarnSubmission,
   rejectEarnSubmission,
+  revokeEarnSubmissionApproval,
   SubmissionError,
 } from "@/lib/earn-submissions";
 import { requireAdminSession } from "@/lib/session";
@@ -48,6 +49,11 @@ export async function PATCH(
     try {
       if (review.data.decision === "approve") {
         await approveEarnSubmission({
+          submissionId: idParsed.data,
+          reviewerId: access.session.user.id,
+        });
+      } else if (review.data.decision === "revoke") {
+        await revokeEarnSubmissionApproval({
           submissionId: idParsed.data,
           reviewerId: access.session.user.id,
         });
