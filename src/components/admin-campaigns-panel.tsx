@@ -704,8 +704,8 @@ function VideoCapStatus({ form }: { form: typeof emptyForm }) {
     relation.tone === "equal"
       ? `جمع پایه (${formatToman(base)}) و پاداش سطوح (${formatToman(bonusSum)}) برابر سقف هر ویدیو است.`
       : relation.tone === "under"
-        ? `جمع پایه و پاداش سطوح ${formatToman(total)} تومان است — ${formatToman(relation.delta)} تومان کمتر از سقف هر ویدیو.`
-        : `جمع پایه و پاداش سطوح ${formatToman(total)} تومان است — ${formatToman(relation.delta)} تومان بیشتر از سقف هر ویدیو.`;
+        ? `جمع پایه و پاداش سطوح ${formatToman(total)} تومان است؛ ${formatToman(relation.delta)} تومان کمتر از سقف هر ویدیو.`
+        : `جمع پایه و پاداش سطوح ${formatToman(total)} تومان است؛ ${formatToman(relation.delta)} تومان بیشتر از سقف هر ویدیو.`;
 
   return (
     <p className={cn("rounded-xl border px-3 py-2 text-xs leading-relaxed", toneClass)}>

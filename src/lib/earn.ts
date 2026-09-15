@@ -7,8 +7,8 @@ export const MIN_PAYOUT_TOMAN = 400_000;
 
 /** Floor high enough that posting is worth the effort even before bonuses. */
 export const DEFAULT_BASE_PAYOUT_TOMAN = 400_000;
-export const DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN = 2_000_000;
-export const DEFAULT_CAMPAIGN_BUDGET_TOMAN = 15_000_000;
+export const DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN = 7_000_000;
+export const DEFAULT_CAMPAIGN_BUDGET_TOMAN = 40_000_000;
 
 export const DREAM_VIEW_BONUS_TOMAN = 1_000_000;
 
@@ -32,7 +32,7 @@ export const DEFAULT_VIEW_BONUS_TIERS = [
 export function scaleViewBonusToman(
   defaultBonusToman: number,
   maxPayoutPerVideoToman: number,
-  referenceMaxPayoutToman = DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN
+  referenceMaxPayoutToman = DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN,
 ): number {
   if (referenceMaxPayoutToman <= 0) return 0;
   const max = Math.max(0, maxPayoutPerVideoToman);
@@ -42,12 +42,15 @@ export function scaleViewBonusToman(
 /** Default view thresholds with bonuses scaled to this campaign's per-video cap. */
 export function viewBonusTiersForMaxPayout(
   maxPayoutPerVideoToman: number,
-  minViews?: Array<number | null | undefined>
+  minViews?: Array<number | null | undefined>,
 ): ViewBonusTier[] {
   return DEFAULT_VIEW_BONUS_TIERS.map((tier, index) => {
     const views = minViews?.[index];
     return {
-      minViews: typeof views === "number" && Number.isFinite(views) ? views : tier.minViews,
+      minViews:
+        typeof views === "number" && Number.isFinite(views)
+          ? views
+          : tier.minViews,
       bonusToman: scaleViewBonusToman(tier.bonusToman, maxPayoutPerVideoToman),
     };
   });
@@ -104,11 +107,12 @@ export const EARN_VERIFICATION_STATUSES = [
 export type EarnCampaignStatus = (typeof EARN_CAMPAIGN_STATUSES)[number];
 export type EarnSubmissionStatus = (typeof EARN_SUBMISSION_STATUSES)[number];
 export type EarnPayoutStatus = (typeof EARN_PAYOUT_STATUSES)[number];
-export type EarnVerificationStatus = (typeof EARN_VERIFICATION_STATUSES)[number];
+export type EarnVerificationStatus =
+  (typeof EARN_VERIFICATION_STATUSES)[number];
 export type EarnPlatform = (typeof EARN_PLATFORMS)[number];
 
 export function isEarnCampaignStatus(
-  value: unknown
+  value: unknown,
 ): value is EarnCampaignStatus {
   return (
     typeof value === "string" &&
@@ -119,7 +123,7 @@ export function isEarnCampaignStatus(
 /** Active and not past deadline. Shared by public list and submission gates. */
 export function isCampaignOpen(
   campaign: { status: string; deadline: Date | string | null },
-  now = new Date()
+  now = new Date(),
 ): boolean {
   if (campaign.status !== "active") return false;
   if (!campaign.deadline) return true;
@@ -134,7 +138,7 @@ export function isCampaignOpen(
 /** Highest view-bonus tier whose minViews the count meets, or null. */
 export function matchViewBonusTier(
   views: number,
-  tiers: ViewBonusTier[]
+  tiers: ViewBonusTier[],
 ): ViewBonusTier | null {
   const sorted = [...tiers].sort((a, b) => a.minViews - b.minViews);
   let matched: ViewBonusTier | null = null;
@@ -147,7 +151,7 @@ export function matchViewBonusTier(
 /** Sum of every stage bonus the view count has reached (uncapped). */
 export function sumReachedViewBonusToman(
   views: number,
-  tiers: ViewBonusTier[]
+  tiers: ViewBonusTier[],
 ): number {
   return [...tiers]
     .filter((tier) => views >= tier.minViews)
@@ -157,7 +161,7 @@ export function sumReachedViewBonusToman(
 /** Remaining bonus room so base + bonus never exceeds the per-video cap. */
 export function viewBonusRemainingCap(
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number
+  basePayoutToman: number,
 ): number {
   return Math.max(0, maxPayoutPerVideoToman - basePayoutToman);
 }
@@ -170,12 +174,12 @@ export function computeViewBonusToman(
   views: number,
   tiers: ViewBonusTier[],
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number
+  basePayoutToman: number,
 ): number {
   const bonus = sumReachedViewBonusToman(views, tiers);
   return Math.min(
     bonus,
-    viewBonusRemainingCap(maxPayoutPerVideoToman, basePayoutToman)
+    viewBonusRemainingCap(maxPayoutPerVideoToman, basePayoutToman),
   );
 }
 
@@ -184,23 +188,18 @@ export function computeCampaignPayoutToman(
   views: number,
   tiers: ViewBonusTier[],
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number
+  basePayoutToman: number,
 ): number {
   return (
     basePayoutToman +
-    computeViewBonusToman(
-      views,
-      tiers,
-      maxPayoutPerVideoToman,
-      basePayoutToman
-    )
+    computeViewBonusToman(views, tiers, maxPayoutPerVideoToman, basePayoutToman)
   );
 }
 
 /** Next unpaid view-bonus tier above `views`, or null at the top. */
 export function nextViewBonusTier(
   views: number,
-  tiers: ViewBonusTier[]
+  tiers: ViewBonusTier[],
 ): ViewBonusTier | null {
   const sorted = [...tiers].sort((a, b) => a.minViews - b.minViews);
   return sorted.find((tier) => tier.minViews > views) ?? null;
@@ -235,7 +234,7 @@ export function earningsSliderStep(maxViews: number): number {
 export function exceedsCampaignBudget(
   spentBudgetToman: number,
   totalBudgetToman: number,
-  amountToman: number
+  amountToman: number,
 ): boolean {
   if (totalBudgetToman <= 0) return false;
   return spentBudgetToman + amountToman > totalBudgetToman;
@@ -243,7 +242,7 @@ export function exceedsCampaignBudget(
 
 export function remainingBudgetToman(
   spentBudgetToman: number,
-  totalBudgetToman: number
+  totalBudgetToman: number,
 ): number {
   if (totalBudgetToman <= 0) return 0;
   return Math.max(0, totalBudgetToman - spentBudgetToman);
@@ -251,10 +250,13 @@ export function remainingBudgetToman(
 
 export function spentBudgetPercent(
   spentBudgetToman: number,
-  totalBudgetToman: number
+  totalBudgetToman: number,
 ): number {
   if (totalBudgetToman <= 0) return 0;
-  return Math.min(100, Math.max(0, (spentBudgetToman / totalBudgetToman) * 100));
+  return Math.min(
+    100,
+    Math.max(0, (spentBudgetToman / totalBudgetToman) * 100),
+  );
 }
 
 export type CampaignBudgetUrgency = "ok" | "low" | "critical" | "empty";
@@ -263,7 +265,7 @@ export type CampaignBudgetUrgency = "ok" | "low" | "critical" | "empty";
 export function campaignBudgetUrgency(
   remaining: number,
   totalBudgetToman: number,
-  basePayoutToman = 0
+  basePayoutToman = 0,
 ): CampaignBudgetUrgency {
   if (totalBudgetToman <= 0) return "ok";
   if (remaining <= 0) return "empty";
@@ -276,7 +278,7 @@ export function campaignBudgetUrgency(
 /** Top view-threshold in this campaign (رویا). Falls back to the 1M bonus mark. */
 export function isDreamViewBonusTier(
   tier: ViewBonusTier,
-  tiers?: readonly ViewBonusTier[]
+  tiers?: readonly ViewBonusTier[],
 ): boolean {
   if (tiers && tiers.length > 0) {
     const top = Math.max(...tiers.map((row) => row.minViews));
@@ -307,7 +309,7 @@ export function reviewDueAt(startedAt: Date | string): Date | null {
 
 export function reviewSlaSnapshot(
   startedAt: Date | string,
-  now = new Date()
+  now = new Date(),
 ): ReviewSlaSnapshot | null {
   const due = reviewDueAt(startedAt);
   if (!due) return null;
@@ -320,7 +322,7 @@ export function reviewSlaSnapshot(
 
 export function countReviewSlaOverdue(
   startedAts: Array<string | Date | null | undefined>,
-  now = new Date()
+  now = new Date(),
 ): number {
   return startedAts.filter((startedAt) => {
     if (!startedAt) return false;

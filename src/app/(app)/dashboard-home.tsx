@@ -1,64 +1,80 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Banknote,
-  CircleHelp,
-  Loader2,
-  Rocket,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  Wallet,
-} from "lucide-react";
+import { ArrowUpLeft, Flame, Loader2, Wand2 } from "lucide-react";
 import Link from "next/link";
 import { CampaignCard } from "@/components/campaign-card";
-import { TrendingBanner } from "@/components/trending-banner";
-import { GrowthBanner } from "@/components/growth-banner";
-import { StatCard } from "@/components/stat-card";
-import { StepCard } from "@/components/step-card";
+import { HowItWorks } from "@/components/how-it-works";
+import {
+  OnboardingChecklist,
+  buildOnboardingSteps,
+} from "@/components/onboarding-checklist";
 import { SectionBadge } from "@/components/section-badge";
 import { useStore } from "@/components/store-provider";
+import {
+  SubmissionStatusBadge,
+  SubmissionTimeline,
+} from "@/components/submission-timeline";
+import { WalletHero } from "@/components/wallet-hero";
 import { usePublicCampaigns } from "@/hooks/use-public-campaigns";
-import { brandCta, brandCtaGhost, brandGlassCard, brandGlowPanel } from "@/lib/brand";
-import { cn, formatToman } from "@/lib/utils";
+import { brandGlassCard, brandGlassCardHover, sectionTitle } from "@/lib/brand";
+import type { UserSubmissionJson } from "@/lib/earn-submissions-types";
+import { cn, formatDate, formatToman } from "@/lib/utils";
 
 export function DashboardHome() {
   const { ready, state } = useStore();
-  const { campaigns: publicCampaigns, loading: campaignsLoading } =
-    usePublicCampaigns();
-
-  const campaigns = publicCampaigns;
-  const [submissionCount, setSubmissionCount] = useState<number | null>(null);
+  const { campaigns, loading: campaignsLoading } = usePublicCampaigns();
+  const [submissions, setSubmissions] = useState<UserSubmissionJson[] | null>(null);
+  const [hasPendingPayout, setHasPendingPayout] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
-    async function loadCount() {
+    async function load() {
       try {
-        const res = await fetch("/api/user/earn/submissions");
-        const data = (await res.json()) as {
-          submissionCount?: number;
-          submissions?: unknown[];
+        const [subRes, payRes] = await Promise.all([
+          fetch("/api/user/earn/submissions"),
+          fetch("/api/user/earn/payout-request"),
+        ]);
+        const subData = (await subRes.json()) as {
+          submissions?: UserSubmissionJson[];
         };
-        if (cancelled || !res.ok) return;
-        setSubmissionCount(
-          data.submissionCount ?? data.submissions?.length ?? 0
+        const payData = (await payRes.json().catch(() => ({}))) as {
+          payouts?: { status: string }[];
+        };
+        if (cancelled) return;
+        setSubmissions(subRes.ok ? (subData.submissions ?? []) : []);
+        setHasPendingPayout(
+          Boolean(payData.payouts?.some((row) => row.status === "pending"))
         );
       } catch {
-        if (!cancelled) setSubmissionCount(0);
+        if (!cancelled) setSubmissions([]);
       }
     }
-    void loadCount();
+    void load();
     return () => {
       cancelled = true;
     };
   }, [ready]);
 
-  const trendingCampaign = useMemo(
-    () => campaigns.find((c) => c.trending) || null,
+  const pending = useMemo(
+    () => (submissions ?? []).filter((s) => s.status === "pending"),
+    [submissions]
+  );
+  const pendingToman = pending.reduce((sum, s) => sum + s.basePayoutToman, 0);
+  const recent = (submissions ?? []).slice(0, 3);
+
+  const sortedCampaigns = useMemo(
+    () => [...campaigns].sort((a, b) => Number(b.trending) - Number(a.trending)),
     [campaigns]
   );
+
+  const steps = buildOnboardingSteps({
+    instagramStatus: state.profile.instagramStatus,
+    submissionCount: submissions?.length ?? 0,
+    lifetimeEarned: state.wallet.lifetimeEarned,
+  });
+  const onboarded = steps.every((s) => s.state === "done");
 
   if (!ready) {
     return (
@@ -69,157 +85,66 @@ export function DashboardHome() {
   }
 
   return (
-    <div className="space-y-10">
-      {/* Hero */}
-      <section className={cn(brandGlowPanel, "p-6 sm:p-10")}>
-        <div
-          className="earn-blob pointer-events-none absolute -left-20 -top-24 size-72 rounded-full bg-brand/10 blur-3xl"
-          aria-hidden
-        />
-        <div
-          className="earn-blob-slow pointer-events-none absolute -right-16 bottom-0 size-64 rounded-full bg-brand/[0.06] blur-3xl"
-          aria-hidden
-        />
-        <div className="relative space-y-4">
-          <SectionBadge icon={Sparkles}>برنامه رسمی کسب درآمد</SectionBadge>
-          <h1 className="max-w-2xl text-2xl font-extrabold text-white sm:text-4xl">
-            سلام {state.profile.firstName}، به{" "}
-            <span className="text-brand">کمپین بنانا</span> خوش آمدی
+    <div className="space-y-8 sm:space-y-10">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm text-white/50">خوش برگشتی</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">
+            سلام {state.profile.firstName || "رفیق"} 👋
           </h1>
-          <p className="max-w-xl text-sm leading-relaxed text-white/60 sm:text-base">
-            محتوای ساخته‌شده با بنانا را در اینستاگرام منتشر کن، لینک پست را ثبت
-            کن و بر اساس بازدید، پاداش نقدی بگیر.
-          </p>
-          <div className="flex flex-wrap gap-3 pt-1">
-            <a href="#campaigns" className={cn(brandCta, "px-5 py-2.5 text-sm")}>
-              <Rocket className="size-4" />
-              مشاهده کمپین‌های فعال
-            </a>
-            <Link href="/posts" className={cn(brandCtaGhost, "px-5 py-2.5 text-sm")}>
-              <Send className="size-4" />
-              ارسال ویدیوی جدید
-            </Link>
-            <Link href="/help" className={cn(brandCtaGhost, "px-5 py-2.5 text-sm")}>
-              <CircleHelp className="size-4" />
-              راهنمای کاربران
-            </Link>
-          </div>
         </div>
-      </section>
-
-      {state.profile.instagramStatus !== "verified" && (
         <Link
-          href="/profile"
-          className={cn(
-            brandGlassCard,
-            "flex flex-wrap items-center justify-between gap-3 p-4 hover:border-brand/30"
-          )}
+          href="/help"
+          className="text-sm text-white/45 transition-colors hover:text-brand"
         >
-          <div>
-            <div className="text-sm font-semibold text-white">
-              اینستاگرامت را تأیید کن
-            </div>
-            <p className="mt-1 text-xs text-white/50">
-              کد سفیر بنانا را در بیو بگذار تا بتوانی در کمپین‌ها شرکت کنی.
-            </p>
-          </div>
-          <span className={cn(brandCtaGhost, "px-4 py-2 text-sm")}>
-            رفتن به تأیید
-          </span>
+          راهنمای کامل
         </Link>
-      )}
+      </header>
 
-      {/* Stats */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        <StatCard
-          icon={Wallet}
-          label="موجودی کیف پول"
-          value={formatToman(state.wallet.available)}
-          suffix="تومان"
-          highlight
-        />
-        <StatCard
-          icon={Banknote}
-          label="مجموع درآمد"
-          value={formatToman(state.wallet.lifetimeEarned)}
-          suffix="تومان"
-        />
-        <StatCard
-          icon={Send}
-          label="ارسال‌های من"
-          value={
-            submissionCount === null ? "—" : formatToman(submissionCount)
-          }
-        />
-      </section>
+      <WalletHero
+        wallet={state.wallet}
+        pendingToman={pendingToman}
+        pendingCount={pending.length}
+        hasPendingPayout={hasPendingPayout}
+      />
 
-      {/* How it works */}
-      <section className="space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <SectionBadge icon={ShieldCheck}>سه قدم ساده</SectionBadge>
-            <h2 className="mt-2 text-xl font-bold text-white">
-              چطور با بنانا درآمد کسب کنیم؟
-            </h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <Link
-              href="/help"
-              className="font-semibold text-brand hover:text-brand-soft"
-            >
-              راهنمای کامل
-            </Link>
-            <Link
-              href="/rules"
-              className="text-white/45 transition-colors hover:text-brand"
-            >
-              قوانین برنامه
-            </Link>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <StepCard
-            step={1}
-            icon={ShieldCheck}
-            title="ورود و تأیید"
-            description="نام کاربری اینستاگرام را وارد کن، کد سفیر بنانا را در بیو بگذار. بررسی حداکثر ۴۸ ساعت طول می‌کشد."
-          />
-          <StepCard
-            step={2}
-            icon={Send}
-            title="ساخت و انتشار"
-            description="محتوای ساخته‌شده با بنانا را منتشر کن و لینک پست را در همین‌جا ثبت کن."
-          />
-          <StepCard
-            step={3}
-            icon={Banknote}
-            title="دریافت پول"
-            description="بعد از بررسی (حداکثر ۴۸ ساعت) پاداش پایه به کیف پولت واریز می‌شود. پاداش بازدید در روز هفتم اضافه می‌گردد."
-          />
-        </div>
-      </section>
-
-      {/* Growth banner */}
-      <GrowthBanner />
-
-      {/* Trending campaign spotlight */}
-      {trendingCampaign && <TrendingBanner campaign={trendingCampaign} />}
+      {submissions !== null && <OnboardingChecklist steps={steps} />}
 
       {/* Campaigns */}
-      <section id="campaigns" className="space-y-4 scroll-mt-20">
-        <h2 className="text-xl font-bold text-white">کمپین‌های فعال</h2>
+      <section id="campaigns" className="scroll-mt-24 space-y-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <SectionBadge icon={Flame}>همین حالا فعال</SectionBadge>
+            <h2 className={cn("mt-3", sectionTitle)}>کمپین‌های باز</h2>
+            <p className="mt-1 text-sm text-white/50">
+              یک کمپین انتخاب کن، ریل بساز و لینکش را ثبت کن.
+            </p>
+          </div>
+          {campaigns.length > 0 && (
+            <span className="text-xs text-white/40">
+              {formatToman(campaigns.length)} کمپین
+            </span>
+          )}
+        </div>
 
         {campaignsLoading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="size-6 animate-spin text-brand" />
           </div>
-        ) : campaigns.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-sm text-white/45">
-            فعلاً کمپین فعالی نیست.
+        ) : sortedCampaigns.length === 0 ? (
+          <div className={cn(brandGlassCard, "px-6 py-14 text-center")}>
+            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-brand/12 text-brand">
+              <Wand2 className="size-5" />
+            </div>
+            <h3 className="mt-4 font-bold text-white">فعلاً کمپین بازی نداریم</h3>
+            <p className="mx-auto mt-1.5 max-w-sm text-sm text-white/50">
+              کمپین‌های جدید همین‌جا نمایش داده می‌شوند. تا آن موقع پیجت را تأیید
+              کن تا آماده باشی.
+            </p>
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {campaigns.map((campaign) => (
+            {sortedCampaigns.map((campaign) => (
               <CampaignCard
                 key={campaign.id}
                 campaign={campaign}
@@ -229,6 +154,62 @@ export function DashboardHome() {
           </div>
         )}
       </section>
+
+      {/* Recent submissions */}
+      {recent.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className={sectionTitle}>آخرین ارسال‌ها</h2>
+            <Link
+              href="/posts"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:text-brand-soft"
+            >
+              همه ارسال‌ها
+              <ArrowUpLeft className="size-4" />
+            </Link>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {recent.map((sub) => (
+              <Link
+                key={sub.id}
+                href="/posts"
+                className={cn(brandGlassCard, brandGlassCardHover, "block p-4")}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="truncate text-sm font-bold text-white">
+                    {sub.campaignTitle}
+                  </h3>
+                  <SubmissionStatusBadge status={sub.status} className="shrink-0" />
+                </div>
+                <div className="mt-1 text-[11px] text-white/40">
+                  {formatDate(sub.createdAt)}
+                </div>
+                <SubmissionTimeline status={sub.status} className="mt-4" />
+                <div className="mt-4 flex items-baseline justify-between border-t border-white/6 pt-3 text-xs text-white/50">
+                  <span>پاداش این ریل</span>
+                  <span className="earn-money text-base text-white">
+                    {formatToman(sub.basePayoutToman + sub.bonusToman)}
+                    <span className="mr-1 text-[10px] font-medium text-white/40">تومان</span>
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* How it works (only once the checklist is gone, so the page never repeats itself) */}
+      {onboarded && (
+        <section className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className={sectionTitle}>یادآوری مسیر</h2>
+            <Link href="/rules" className="text-sm text-white/45 hover:text-brand">
+              قوانین برنامه
+            </Link>
+          </div>
+          <HowItWorks compact />
+        </section>
+      )}
     </div>
   );
 }

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { getSession, signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
-import { brandCta, brandGlassCard, formFocus } from "@/lib/brand";
+import { ArrowRight, Loader2, Smartphone } from "lucide-react";
+import { brandCta, brandGlassCard, formFocus, formInput } from "@/lib/brand";
 import {
   firstNameSchema,
   lastNameSchema,
@@ -272,63 +272,101 @@ export function LoginForm({
     );
   }
 
+  const stepIndex = step === "mobile" ? 0 : step === "otp" ? 1 : 2;
+
   return (
-    <section id="login" className={cn(brandGlassCard, "p-5 sm:p-6", className)}>
-      <header className="mb-5 space-y-1">
-        <h2 className="text-xl font-bold text-white sm:text-2xl">
+    <section
+      id="login"
+      className={cn(
+        brandGlassCard,
+        "relative scroll-mt-24 overflow-hidden p-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] sm:p-6",
+        className,
+      )}
+    >
+      <div
+        className="pointer-events-none absolute -left-16 -top-20 size-48 rounded-full bg-brand/12 blur-3xl"
+        aria-hidden
+      />
+      <header className="relative mb-5 space-y-2">
+        <div className="flex items-center gap-1.5" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className={cn(
+                "h-1 rounded-full transition-all",
+                i <= stepIndex ? "w-6 bg-brand" : "w-3 bg-white/12",
+              )}
+            />
+          ))}
+        </div>
+        <h2 className="text-xl font-extrabold text-white sm:text-2xl">
           {step === "mobile"
-            ? "ورود به کمپین بنانا"
+            ? "همین حالا شروع کن"
             : step === "otp"
-              ? "کد تأیید"
-              : "تکمیل اطلاعات"}
+              ? "کد تأیید را وارد کن"
+              : "اسمت را بگو"}
         </h2>
         <p className="text-sm text-white/50">
           {step === "mobile"
-            ? "با شماره موبایل وارد شو یا حساب بساز."
+            ? "ورود یا ثبت‌نام با شماره موبایل. کمتر از یک دقیقه."
             : step === "otp"
-              ? `کد تأیید به شماره ${mobileNumber} ارسال شد`
-              : "نام و نام خانوادگی‌ات را وارد کن."}
+              ? (
+                <>
+                  کد ۶ رقمی به{" "}
+                  <span className="font-semibold text-white" dir="ltr">
+                    {mobileNumber}
+                  </span>{" "}
+                  پیامک شد.
+                </>
+              )
+              : "نام و نام خانوادگی برای واریز پول لازم است."}
         </p>
       </header>
 
       {step === "mobile" && (
         <form onSubmit={handleMobileSubmit} className="space-y-4">
           <label className="block space-y-1.5">
-            <span className="text-sm text-white/55">شماره موبایل</span>
-            <input
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel"
-              placeholder="09123456789"
-              value={mobileNumber}
-              onChange={(event) => {
-                const value = event.target.value.replace(/\D/g, "");
-                if (value.length <= 12) {
-                  setMobileNumber(value);
-                  setMobileError("");
-                }
-              }}
-              className={cn(
-                "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-left text-base tracking-wider text-white",
-                formFocus,
-              )}
-              dir="ltr"
-              required
-            />
+            <span className="text-xs font-semibold text-white/55">شماره موبایل</span>
+            <div className="relative">
+              <Smartphone className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-white/30" />
+              <input
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                placeholder="0912 345 6789"
+                value={mobileNumber}
+                onChange={(event) => {
+                  const value = event.target.value.replace(/\D/g, "");
+                  if (value.length <= 12) {
+                    setMobileNumber(value);
+                    setMobileError("");
+                  }
+                }}
+                className={cn(
+                  formInput,
+                  "h-12 pl-10 text-left text-base tracking-[0.12em]",
+                  formFocus,
+                  mobileError && "border-rose-500/50",
+                )}
+                dir="ltr"
+                required
+              />
+            </div>
             {mobileError && (
-              <span className="text-xs text-rose-400">{mobileError}</span>
+              <span className="block text-xs text-rose-400">{mobileError}</span>
             )}
           </label>
           <button
             type="submit"
             disabled={isLoading}
-            className={cn(
-              brandCta,
-              "h-11 w-full px-5 text-sm disabled:opacity-50",
-            )}
+            className={cn(brandCta, "h-12 w-full px-5 text-sm")}
           >
-            {isLoading && <Loader2 className="size-4 animate-spin" />}
-            {isLoading ? "در حال ارسال..." : "ارسال کد تأیید"}
+            {isLoading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ArrowRight className="size-4 rotate-180" />
+            )}
+            {isLoading ? "در حال ارسال..." : "دریافت کد تأیید"}
           </button>
         </form>
       )}
@@ -336,7 +374,7 @@ export function LoginForm({
       {step === "otp" && (
         <form onSubmit={handleOtpSubmit} className="space-y-5">
           <label className="block space-y-1.5">
-            <span className="text-sm text-white/55">کد تأیید ۶ رقمی</span>
+            <span className="text-xs font-semibold text-white/55">کد تأیید ۶ رقمی</span>
             <input
               type="text"
               inputMode="numeric"
@@ -349,8 +387,10 @@ export function LoginForm({
                 setOtpError("");
               }}
               className={cn(
-                "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-center text-2xl font-bold tracking-[0.4em] text-white",
+                formInput,
+                "h-14 text-center text-3xl font-black tracking-[0.45em]",
                 formFocus,
+                otpError && "border-rose-500/50",
               )}
               dir="ltr"
               required
@@ -384,17 +424,14 @@ export function LoginForm({
                 setOtp("");
                 setOtpError("");
               }}
-              className="h-11 flex-1 rounded-xl border border-white/10 bg-white/5 text-sm text-white/70 hover:bg-white/8"
+              className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/5 text-sm text-white/70 transition-colors hover:bg-white/8"
             >
               بازگشت
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className={cn(
-                brandCta,
-                "h-11 flex-1 px-5 text-sm disabled:opacity-50",
-              )}
+              className={cn(brandCta, "h-12 flex-[2] px-5 text-sm")}
             >
               {isLoading && <Loader2 className="size-4 animate-spin" />}
               {isLoading ? "در حال ورود..." : "ورود"}
@@ -406,17 +443,14 @@ export function LoginForm({
       {step === "name" && (
         <form onSubmit={handleNameSubmit} className="space-y-4">
           <label className="block space-y-1.5">
-            <span className="text-sm text-white/55">نام</span>
+            <span className="text-xs font-semibold text-white/55">نام</span>
             <input
               value={firstName}
               onChange={(event) => {
                 setFirstName(event.target.value);
                 setFirstNameError("");
               }}
-              className={cn(
-                "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white",
-                formFocus,
-              )}
+              className={cn(formInput, "h-12", formFocus)}
               required
             />
             {firstNameError && (
@@ -424,17 +458,14 @@ export function LoginForm({
             )}
           </label>
           <label className="block space-y-1.5">
-            <span className="text-sm text-white/55">نام خانوادگی</span>
+            <span className="text-xs font-semibold text-white/55">نام خانوادگی</span>
             <input
               value={lastName}
               onChange={(event) => {
                 setLastName(event.target.value);
                 setLastNameError("");
               }}
-              className={cn(
-                "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white",
-                formFocus,
-              )}
+              className={cn(formInput, "h-12", formFocus)}
               required
             />
             {lastNameError && (
@@ -449,17 +480,14 @@ export function LoginForm({
                 setFirstNameError("");
                 setLastNameError("");
               }}
-              className="h-11 flex-1 rounded-xl border border-white/10 bg-white/5 text-sm text-white/70 hover:bg-white/8"
+              className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/5 text-sm text-white/70 transition-colors hover:bg-white/8"
             >
               بازگشت
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className={cn(
-                brandCta,
-                "h-11 flex-1 px-5 text-sm disabled:opacity-50",
-              )}
+              className={cn(brandCta, "h-12 flex-[2] px-5 text-sm")}
             >
               {isLoading && <Loader2 className="size-4 animate-spin" />}
               {isLoading ? "در حال ثبت‌نام..." : "ادامه"}

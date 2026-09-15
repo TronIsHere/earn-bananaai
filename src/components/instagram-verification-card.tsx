@@ -14,6 +14,7 @@ import {
   brandCtaGhost,
   brandGlassCard,
   formFocus,
+  formInput,
 } from "@/lib/brand";
 import { normalizeInstagramHandle } from "@/lib/instagram";
 import { VERIFICATION_CODE_PREFIX } from "@/lib/verification-code";
@@ -25,11 +26,17 @@ const statusMeta: Record<
   string,
   { label: string; className: string }
 > = {
-  verified: { label: "تأیید شده", className: "bg-emerald-500/15 text-emerald-300" },
-  pending: { label: "در انتظار بررسی", className: "bg-amber-500/15 text-amber-300" },
-  rejected: { label: "رد شده", className: "bg-rose-500/15 text-rose-300" },
-  none: { label: "شروع نشده", className: "bg-white/10 text-white/45" },
+  verified: { label: "تأیید شده", className: "border-cash/30 bg-cash/12 text-cash" },
+  pending: { label: "در انتظار بررسی", className: "border-amber-500/25 bg-amber-500/12 text-amber-200" },
+  rejected: { label: "رد شده", className: "border-rose-500/30 bg-rose-500/12 text-rose-200" },
+  none: { label: "شروع نشده", className: "border-white/10 bg-white/6 text-white/50" },
 };
+
+const steps = [
+  { n: "۱", text: "نام کاربری اینستاگرامت را وارد کن" },
+  { n: "۲", text: "کد را کپی کن و در بیوی پیج بگذار" },
+  { n: "۳", text: "درخواست بررسی بده" },
+];
 
 function applyVerification(data: {
   instagramHandle?: string | null;
@@ -127,31 +134,58 @@ export function InstagramVerificationCard() {
   const meta = statusMeta[status] || statusMeta.none;
 
   return (
-    <section className={cn(brandGlassCard, "space-y-4 p-5")}>
+    <section
+      className={cn(
+        brandGlassCard,
+        "space-y-4 p-5 sm:p-6",
+        verified ? "border-cash/30" : "border-brand/30"
+      )}
+    >
       <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand/12 text-brand">
+        <div
+          className={cn(
+            "flex size-11 shrink-0 items-center justify-center rounded-2xl",
+            verified ? "bg-cash text-brand-ink" : "bg-brand text-brand-ink"
+          )}
+        >
           <ShieldCheck className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-bold text-white">تأیید اینستاگرام</h2>
-            <span className={cn("rounded-full px-2 py-0.5 text-[10px]", meta.className)}>
+            <h2 className="text-base font-bold text-white">تأیید پیج اینستاگرام</h2>
+            <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", meta.className)}>
               {meta.label}
             </span>
-            <ReviewSlaPromise />
+            {!verified && <ReviewSlaPromise />}
           </div>
           <p className="mt-1 text-sm leading-relaxed text-white/55">
-            نام کاربری را وارد کن، کد بیو را در پروفایل اینستاگرام بگذار، بعد
-            درخواست بررسی بده. بررسی حداکثر ۴۸ ساعت طول می‌کشد و زمان دقیق نتیجه
-            را همین‌جا می‌بینی.
+            {verified
+              ? "پیجت تأیید شده و می‌توانی در همه کمپین‌ها شرکت کنی."
+              : "با این کار مطمئن می‌شویم پیج مال خودت است. فقط سه قدم است."}
           </p>
         </div>
       </div>
 
+      {!verified && (
+        <ol className="grid gap-2 sm:grid-cols-3">
+          {steps.map((step) => (
+            <li
+              key={step.n}
+              className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-xs text-white/70"
+            >
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-[10px] font-bold text-brand">
+                {step.n}
+              </span>
+              {step.text}
+            </li>
+          ))}
+        </ol>
+      )}
+
       <label className="block space-y-1.5">
-        <span className="text-xs text-white/50">نام کاربری اینستاگرام</span>
+        <span className="text-xs font-semibold text-white/55">نام کاربری اینستاگرام</span>
         <div className="relative">
-          <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-white/35">
+          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base text-white/35">
             @
           </span>
           <input
@@ -161,7 +195,8 @@ export function InstagramVerificationCard() {
             disabled={pending || verified}
             dir="ltr"
             className={cn(
-              "w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pr-8 pl-3 text-left text-sm text-white",
+              formInput,
+              "h-12 pl-9 text-left",
               formFocus,
               (pending || verified) && "opacity-70"
             )}
@@ -174,7 +209,7 @@ export function InstagramVerificationCard() {
           type="button"
           onClick={start}
           disabled={busy !== null || !normalizedHandle}
-          className={cn(brandCtaGhost, "px-4 py-2.5 text-sm disabled:opacity-50")}
+          className={cn(brandCtaGhost, "h-11 px-4 text-sm")}
         >
           {busy === "start" ? (
             <Loader2 className="size-4 animate-spin" />
@@ -192,9 +227,9 @@ export function InstagramVerificationCard() {
             <span className="text-white/70">{VERIFICATION_CODE_PREFIX} - 4F7K</span>{" "}
             است.
           </p>
-          <div className="flex items-center gap-2 rounded-2xl border border-dashed border-brand/35 bg-black/20 px-4 py-3">
+          <div className="flex items-center gap-3 rounded-2xl border border-dashed border-brand/40 bg-brand/[0.06] px-4 py-3.5">
             <code
-              className="flex-1 text-left text-sm font-bold text-brand"
+              className="flex-1 text-left text-base font-extrabold tracking-wide text-brand"
               dir="ltr"
             >
               {code}
@@ -202,11 +237,16 @@ export function InstagramVerificationCard() {
             <button
               type="button"
               onClick={copyCode}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10"
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition-colors",
+                copied
+                  ? "bg-cash/15 text-cash"
+                  : "bg-brand text-brand-ink hover:bg-brand-soft"
+              )}
             >
               {copied ? (
                 <>
-                  <Check className="size-3.5 text-emerald-400" />
+                  <Check className="size-3.5" />
                   کپی شد
                 </>
               ) : (
@@ -227,15 +267,17 @@ export function InstagramVerificationCard() {
       )}
 
       {verified && (
-        <p className="text-sm text-emerald-300">
-          حساب اینستاگرام تأیید شد. می‌توانی در کمپین‌ها شرکت کنی.
+        <p className="inline-flex items-center gap-2 rounded-xl border border-cash/25 bg-cash/10 px-3 py-2 text-sm text-cash">
+          <Check className="size-4" />
+          پیج {p.instagramHandle ? `@${p.instagramHandle}` : ""} تأیید شد. حالا می‌توانی
+          پست ثبت کنی.
         </p>
       )}
 
       {pending && (
-        <div className="space-y-1">
-          <p className="text-sm text-amber-200/90">
-            درخواست ثبت شد. بیو را تغییر نده تا بررسی تمام شود.
+        <div className="space-y-1 rounded-xl border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2.5">
+          <p className="text-sm font-semibold text-amber-100">
+            درخواست ثبت شد. تا پایان بررسی، بیو را تغییر نده.
           </p>
           <ReviewSlaNotice startedAt={p.verificationRequestedAt} />
         </div>
@@ -247,7 +289,7 @@ export function InstagramVerificationCard() {
             type="button"
             onClick={requestReview}
             disabled={busy !== null}
-            className={cn(brandCta, "px-5 py-2.5 text-sm disabled:opacity-50")}
+            className={cn(brandCta, "h-11 px-5 text-sm")}
           >
             {busy === "review" ? (
               <Loader2 className="size-4 animate-spin" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Eye, Sparkles } from "lucide-react";
+import { Crown, Eye, TrendingUp } from "lucide-react";
 import {
   computeCampaignPayoutToman,
   computeViewBonusToman,
@@ -12,26 +12,42 @@ import {
   sumReachedViewBonusToman,
 } from "@/lib/earn";
 import type { ViewBonusTier } from "@/lib/types";
-import { cn, formatToman } from "@/lib/utils";
-import { TierChip } from "@/components/tier-chip";
+import { cn, formatToman, formatTomanCompact, formatViewsCompact } from "@/lib/utils";
+import { Money } from "@/components/money";
 
+/**
+ * "If your reel gets N views you earn X" slider. `variant="hero"` is the big
+ * landing-page version; `variant="card"` sits inside a campaign card.
+ */
 export function EarningsCalculator({
   basePayoutToman,
   viewBonusTiers,
   maxPayoutPerVideoToman,
+  variant = "card",
+  initialViews,
+  onViewsChange,
+  className,
 }: {
   basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
+  variant?: "card" | "hero";
+  initialViews?: number;
+  onViewsChange?: (views: number) => void;
+  className?: string;
 }) {
   const maxViews = useMemo(
     () => earningsSliderMaxViews(viewBonusTiers),
     [viewBonusTiers]
   );
   const step = earningsSliderStep(maxViews);
-  const [views, setViews] = useState(() =>
-    Math.min(defaultEarningsSliderViews(viewBonusTiers), maxViews)
+  const [views, setViewsState] = useState(() =>
+    Math.min(initialViews ?? defaultEarningsSliderViews(viewBonusTiers), maxViews)
   );
+  const setViews = (next: number) => {
+    setViewsState(next);
+    onViewsChange?.(next);
+  };
 
   const bonus = computeViewBonusToman(
     views,
@@ -50,7 +66,7 @@ export function EarningsCalculator({
   const atCap =
     maxPayoutPerVideoToman > 0 && total >= maxPayoutPerVideoToman && rawBonus > 0;
   const fillPct = maxViews > 0 ? (views / maxViews) * 100 : 0;
-  const contentWord = "ریل‌ت";
+  const hero = variant === "hero";
 
   const nextTotal = nextTier
     ? computeCampaignPayoutToman(
@@ -61,25 +77,54 @@ export function EarningsCalculator({
       )
     : null;
 
+  const sortedTiers = useMemo(
+    () => [...viewBonusTiers].sort((a, b) => a.minViews - b.minViews),
+    [viewBonusTiers]
+  );
+  const topTier = sortedTiers[sortedTiers.length - 1];
+
   return (
     <div
-      className="mb-3 rounded-xl border border-brand/20 bg-brand/6 px-3 py-3"
+      className={cn(
+        hero
+          ? "space-y-5"
+          : "mb-3 rounded-2xl border border-brand/20 bg-brand/[0.06] px-3.5 py-3.5",
+        className
+      )}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <p className="text-xs leading-relaxed text-white/55">
-        اگر {contentWord}{" "}
-        <strong className="text-white">{formatToman(views)}</strong> بازدید
-        بگیرد
-      </p>
-      <p className="mt-1 text-2xl font-extrabold tabular-nums tracking-tight text-brand">
-        {formatToman(total)}
-        <span className="mr-1 text-sm font-semibold text-brand/80">
-          تومان می‌گیری
-        </span>
-      </p>
+      <div className={cn(hero && "space-y-1")}>
+        <p
+          className={cn(
+            "leading-relaxed text-white/60",
+            hero ? "text-sm sm:text-base" : "text-xs"
+          )}
+        >
+          اگر ریل تو{" "}
+          <strong className="text-white">{formatToman(views)}</strong> بازدید
+          بگیرد
+        </p>
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+          <Money
+            amount={total}
+            size={hero ? "hero" : "lg"}
+            durationMs={450}
+            valueClassName="text-brand"
+            unitClassName="text-brand/80"
+          />
+          <span
+            className={cn(
+              "pb-1 font-semibold text-white/70",
+              hero ? "text-base" : "text-xs"
+            )}
+          >
+            می‌گیری
+          </span>
+        </div>
+      </div>
 
-      <div className="relative mt-3" dir="ltr">
-        {viewBonusTiers.map((tier) => {
+      <div className={cn("relative", hero ? "mt-2" : "mt-3")} dir="ltr">
+        {sortedTiers.map((tier) => {
           if (tier.minViews <= 0 || tier.minViews > maxViews) return null;
           const left = (tier.minViews / maxViews) * 100;
           const reached = views >= tier.minViews;
@@ -88,8 +133,8 @@ export function EarningsCalculator({
               key={tier.minViews}
               aria-hidden
               className={cn(
-                "pointer-events-none absolute top-1.5 size-1.5 -translate-x-1/2 rounded-full",
-                reached ? "bg-brand-ink" : "bg-white/35"
+                "pointer-events-none absolute top-[7px] size-2 -translate-x-1/2 rounded-full border border-black/40",
+                reached ? "bg-brand-ink" : "bg-white/40"
               )}
               style={{ left: `${left}%` }}
             />
@@ -103,7 +148,7 @@ export function EarningsCalculator({
           value={views}
           onChange={(event) => setViews(Number(event.target.value))}
           onClick={(event) => event.stopPropagation()}
-          aria-label={`بازدید ${contentWord}`}
+          aria-label="بازدید ریل"
           aria-valuemin={0}
           aria-valuemax={maxViews}
           aria-valuenow={views}
@@ -111,72 +156,114 @@ export function EarningsCalculator({
           className="earn-range"
           style={{ ["--fill" as string]: `${fillPct}%` }}
         />
-        <div className="mt-1 flex justify-between text-[10px] text-white/30">
+        <div className="mt-1 flex justify-between text-[10px] text-white/35">
           <span>۰</span>
-          <span className="inline-flex items-center gap-0.5">
-            <Eye className="size-2.5" />
-            {formatToman(maxViews)}
+          <span className="inline-flex items-center gap-1">
+            <Eye className="size-3" />
+            {formatViewsCompact(maxViews)} بازدید
           </span>
         </div>
       </div>
 
-      <p className="mt-2 text-[11px] text-white/40">
-        پایه {formatToman(basePayoutToman)}
-        {bonus > 0 ? (
-          <>
-            {" "}
-            + پاداش سطوح {formatToman(bonus)}
-          </>
-        ) : (
-          <> — هنوز به پله پاداش بازدید نرسیدی</>
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-x-4 gap-y-1",
+          hero ? "text-sm text-white/60" : "text-[11px] text-white/45"
         )}
-      </p>
-
-      {atCap ? (
-        <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-brand">
-          <Sparkles className="size-3" />
-          به سقف پرداخت این ویدیو رسیدی
-        </p>
-      ) : nextTier && nextTotal != null ? (
-        <p className="mt-1 text-[11px] text-white/45">
-          با {formatToman(nextTier.minViews)} بازدید می‌شود{" "}
-          <span className="font-semibold text-white/80">
-            {formatToman(nextTotal)} تومان
+      >
+        <span>
+          پایه{" "}
+          <strong className="text-white/85">{formatTomanCompact(basePayoutToman)}</strong>
+        </span>
+        <span className="text-white/25">+</span>
+        <span>
+          پاداش بازدید{" "}
+          <strong className={cn(bonus > 0 ? "text-brand" : "text-white/50")}>
+            {formatTomanCompact(bonus)}
+          </strong>
+        </span>
+        {atCap ? (
+          <span className="inline-flex items-center gap-1 font-semibold text-brand">
+            <Crown className="size-3.5" />
+            سقف پرداخت این ریل
           </span>
-        </p>
-      ) : null}
+        ) : nextTier && nextTotal != null ? (
+          <span className="inline-flex items-center gap-1 text-white/55">
+            <TrendingUp className="size-3.5 text-brand" />
+            با {formatViewsCompact(nextTier.minViews)} بازدید می‌شود{" "}
+            <strong className="text-white/85">{formatTomanCompact(nextTotal)}</strong>
+          </span>
+        ) : null}
+      </div>
 
-      {viewBonusTiers.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {viewBonusTiers.map((tier, i) => {
-            const active = views >= tier.minViews;
+      {sortedTiers.length > 0 && (
+        <div className={cn("flex flex-wrap gap-1.5", hero ? "pt-1" : "mt-3")}>
+          <TierButton
+            active={views < (sortedTiers[0]?.minViews ?? Infinity)}
+            onClick={() => setViews(0)}
+            label="فقط تأیید"
+            amount={basePayoutToman}
+          />
+          {sortedTiers.map((tier) => {
+            const reached = views >= tier.minViews;
+            const isTop = topTier != null && tier.minViews === topTier.minViews;
             return (
-              <button
+              <TierButton
                 key={`${tier.minViews}-${tier.bonusToman}`}
-                type="button"
+                active={reached}
+                pressed={views === tier.minViews}
+                dream={isTop}
                 onClick={() => setViews(Math.min(tier.minViews, maxViews))}
-                className={cn(
-                  "rounded-full transition-opacity",
-                  active ? "opacity-100" : "opacity-60 hover:opacity-90"
+                label={`${formatViewsCompact(tier.minViews)} بازدید`}
+                amount={computeCampaignPayoutToman(
+                  tier.minViews,
+                  sortedTiers,
+                  maxPayoutPerVideoToman,
+                  basePayoutToman
                 )}
-                aria-pressed={views === tier.minViews}
-              >
-                <TierChip
-                  tier={tier}
-                  index={i}
-                  tiers={viewBonusTiers}
-                  payoutToman={computeCampaignPayoutToman(
-                    tier.minViews,
-                    viewBonusTiers,
-                    maxPayoutPerVideoToman,
-                    basePayoutToman
-                  )}
-                />
-              </button>
+              />
             );
           })}
         </div>
       )}
     </div>
+  );
+}
+
+function TierButton({
+  active,
+  pressed,
+  dream,
+  onClick,
+  label,
+  amount,
+}: {
+  active: boolean;
+  pressed?: boolean;
+  dream?: boolean;
+  onClick: () => void;
+  label: string;
+  amount: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all",
+        dream
+          ? "border-brand/50 bg-brand/15 text-white"
+          : "border-white/10 bg-black/25 text-white/70",
+        active ? "opacity-100" : "opacity-50 hover:opacity-90",
+        pressed && "ring-2 ring-brand/40"
+      )}
+    >
+      {dream ? <Crown className="size-3 text-brand" /> : null}
+      <span>{label}</span>
+      <span className={cn("font-bold", dream ? "text-brand" : "text-white/85")}>
+        {formatTomanCompact(amount)}
+      </span>
+    </button>
   );
 }

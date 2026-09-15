@@ -20,24 +20,24 @@ export function StatCard({
       className={cn(
         brandGlassCard,
         "relative overflow-hidden p-4 sm:p-5",
-        highlight && "border-brand/25 bg-brand/[0.06]"
+        highlight && "border-brand/30 bg-brand/[0.06]"
       )}
     >
-      <div
-        className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-xl",
-          brandIconBg
-        )}
-      >
-        <Icon className="size-4 text-brand" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-white/50">{label}</div>
+        <div
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-xl",
+            highlight ? "bg-brand text-brand-ink" : brandIconBg
+          )}
+        >
+          <Icon className={cn("size-4", !highlight && "text-brand")} />
+        </div>
       </div>
-      <div className="mt-3 text-xs text-white/45">{label}</div>
-      <div className="mt-1 flex items-baseline gap-1">
-        <span className="text-xl font-bold text-white sm:text-2xl">
-          {value}
-        </span>
+      <div className="mt-3 flex items-baseline gap-1.5">
+        <span className="earn-money text-2xl text-white sm:text-3xl">{value}</span>
         {suffix && (
-          <span className="text-xs font-normal text-white/40">{suffix}</span>
+          <span className="text-xs font-medium text-white/40">{suffix}</span>
         )}
       </div>
     </div>

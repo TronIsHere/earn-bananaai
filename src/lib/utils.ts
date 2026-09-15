@@ -79,3 +79,34 @@ export function formatRemainingDuration(ms: number) {
   if (hours >= 1) return `${formatToman(hours)} ساعت مانده`;
   return `${formatToman(totalMinutes)} دقیقه مانده`;
 }
+
+const PERSIAN_DECIMAL = "٫";
+
+/**
+ * Headline-friendly Toman amount: ۴۰۰ هزار، ۱٫۵ میلیون، ۲ میلیون.
+ * Falls back to full grouping under 1,000. Use `formatToman` for exact values.
+ */
+export function formatTomanCompact(amount: number) {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? "-" : "";
+  if (abs >= 1_000_000) {
+    const millions = abs / 1_000_000;
+    const rounded = Math.round(millions * 10) / 10;
+    const text = Number.isInteger(rounded)
+      ? formatToman(rounded)
+      : formatToman(Math.floor(rounded)) +
+        PERSIAN_DECIMAL +
+        formatToman(Math.round((rounded % 1) * 10));
+    return `${sign}${text} میلیون`;
+  }
+  if (abs >= 1_000) {
+    const thousands = Math.round(abs / 1_000);
+    return `${sign}${formatToman(thousands)} هزار`;
+  }
+  return `${sign}${formatToman(abs)}`;
+}
+
+/** Short view count for chips: ۱ هزار، ۲۰ هزار، ۱۰۰ هزار، ۱ میلیون. */
+export function formatViewsCompact(views: number) {
+  return formatTomanCompact(views);
+}

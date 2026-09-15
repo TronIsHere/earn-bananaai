@@ -10,7 +10,7 @@ import { ProgressBar } from "@/components/progress-bar";
 const urgencyCopy: Record<CampaignBudgetUrgency, string> = {
   ok: "بودجه باقی‌مانده",
   low: "بودجه رو به اتمام",
-  critical: "عجله کن — بودجه کم است",
+  critical: "عجله کن، بودجه رو به اتمام است",
   empty: "بودجه این کمپین تمام شده",
 };
 

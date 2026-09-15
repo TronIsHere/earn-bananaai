@@ -13,8 +13,8 @@ import { SectionBadge } from "@/components/section-badge";
 import {
   brandCtaGhost,
   brandGlassCard,
-  brandHeadlineGradient,
   brandIconBg,
+  sectionTitle,
 } from "@/lib/brand";
 import {
   FIXABLE_REJECT_REASONS,
@@ -47,9 +47,7 @@ export default function RulesPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <header>
         <SectionBadge icon={ScrollText}>شفاف و کوتاه</SectionBadge>
-        <h1 className={cn("mt-2 text-2xl font-bold", brandHeadlineGradient)}>
-          قوانین برنامه
-        </h1>
+        <h1 className={cn("mt-3", sectionTitle)}>قوانین برنامه</h1>
         <p className="mt-1 text-sm text-white/55">
           چه کسانی عضو می‌شوند، چه زمانی پول می‌دهیم، چه زمانی رد می‌کنیم، و
           حداقل برداشت چقدر است. آموزش گام‌به‌گام در{" "}
@@ -114,9 +112,9 @@ export default function RulesPage() {
       </RuleCard>
 
       <RuleCard icon={Wallet} title="حداقل برداشت">
-        <p className="text-3xl font-black text-white">
+        <p className="earn-money text-4xl text-white">
           {formatToman(MIN_PAYOUT_TOMAN)}
-          <span className="mr-1 text-sm font-normal text-white/40">تومان</span>
+          <span className="mr-1.5 text-sm font-medium text-white/40">تومان</span>
         </p>
         <p className="mt-3 text-sm leading-relaxed text-white/65">
           کمتر از این مبلغ نمی‌توانی درخواست واریز بدهی. معمولاً با یک ویدیوی

@@ -26,8 +26,10 @@ import {
   brandCtaGhost,
   brandGlassCard,
   brandGlassCardHover,
-  brandGlowPanel,
   brandIconBg,
+  brandMeshPanel,
+  formFocus,
+  formInput,
 } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
@@ -92,9 +94,10 @@ export function HelpCenter() {
 
   return (
     <div className="space-y-10">
-      <section className={cn(brandGlowPanel, "p-6 sm:p-10")}>
+      <section className={cn(brandMeshPanel, "p-6 sm:p-10")}>
+        <div className="earn-grid pointer-events-none absolute inset-0" aria-hidden />
         <div
-          className="earn-blob pointer-events-none absolute -left-20 -top-24 size-72 rounded-full bg-brand/10 blur-3xl"
+          className="earn-blob pointer-events-none absolute -left-20 -top-24 size-72 rounded-full bg-brand/15 blur-3xl"
           aria-hidden
         />
         <div className="relative space-y-4">
@@ -112,7 +115,7 @@ export function HelpCenter() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="مثلاً کد بیو، اسکرین‌شات، برداشت..."
-              className="w-full rounded-2xl border border-white/10 bg-black/30 py-3 pr-10 pl-4 text-sm text-white placeholder:text-white/35 focus:border-brand/50 focus:ring-1 focus:ring-brand/25"
+              className={cn(formInput, formFocus, "h-12 rounded-2xl pr-10")}
             />
           </label>
         </div>

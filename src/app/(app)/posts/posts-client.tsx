@@ -5,19 +5,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  Award,
-  CheckCircle2,
-  Clock3,
   ExternalLink,
   Eye,
   History,
-  Hourglass,
   ImagePlus,
   Loader2,
-  RotateCcw,
   Send,
   ShieldCheck,
-  XCircle,
+  Wand2,
 } from "lucide-react";
 import { PlatformBadge } from "@/components/campaign-card";
 import { CampaignBudgetMeter } from "@/components/campaign-budget";
@@ -25,45 +20,24 @@ import { CampaignRequirements } from "@/components/campaign-requirements";
 import { ReviewSlaNotice, ReviewSlaPromise } from "@/components/review-sla";
 import { SectionBadge } from "@/components/section-badge";
 import {
+  SubmissionStatusBadge,
+  SubmissionTimeline,
+} from "@/components/submission-timeline";
+import {
   brandCta,
   brandCtaGhost,
   brandGlassCard,
   brandGlassCardHover,
   formFocus,
+  formInput,
+  sectionTitle,
 } from "@/lib/brand";
 import { MAX_IMAGE_SIZE } from "@/lib/image-constants";
 import { validateImageFile } from "@/lib/image-validation";
 import type { UserCampaignJson, UserSubmissionJson } from "@/lib/earn-submissions-types";
 import { normalizeInstagramPostUrl } from "@/lib/validations";
-import { cn, formatDate, formatDateTime, formatToman } from "@/lib/utils";
+import { cn, formatDate, formatDateTime, formatToman, formatTomanCompact } from "@/lib/utils";
 import { REVIEW_SLA_HOURS, reviewDueAt } from "@/lib/earn";
-
-const statusLabel: Record<string, string> = {
-  pending: "در انتظار بررسی",
-  approved: "تأیید شده",
-  bonus_pending: "منتظر بازدید روز ۷",
-  changes_requested: "نیاز به اصلاح",
-  rejected: "رد شده",
-  finalized: "نهایی شده",
-};
-
-const statusClass: Record<string, string> = {
-  pending: "bg-amber-500/15 text-amber-300",
-  approved: "bg-emerald-500/15 text-emerald-300",
-  bonus_pending: "bg-sky-500/15 text-sky-300",
-  changes_requested: "bg-orange-500/15 text-orange-200",
-  rejected: "bg-rose-500/15 text-rose-300",
-  finalized: "bg-white/10 text-white/60",
-};
-
-const statusIcon: Record<string, typeof Hourglass> = {
-  pending: Hourglass,
-  approved: CheckCircle2,
-  bonus_pending: Clock3,
-  changes_requested: RotateCcw,
-  rejected: XCircle,
-  finalized: Award,
-};
 
 export default function PostsPage() {
   const { status: authStatus } = useSession();
@@ -270,45 +244,49 @@ export default function PostsPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <SectionBadge icon={History}>پیگیری پاداش</SectionBadge>
-        <h1 className="mt-2 text-2xl font-bold text-white">پست‌های من</h1>
-        <p className="mt-1 text-sm text-white/55">
-          لینک پست اینستاگرام و اسکرین‌شات اثبات را بفرستید. بررسی حداکثر ۴۸ ساعت
-          طول می‌کشد. اگر ایراد کوچکی مثل هشتگ جا مانده باشد، یک‌بار فرصت اصلاح
-          دارید.{" "}
-          <Link href="/help/ersal-post" className="text-brand hover:text-brand-soft">
-            راهنمای ارسال
-          </Link>
-        </p>
-        <div className="mt-2">
-          <ReviewSlaPromise />
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <SectionBadge icon={History}>پیگیری پاداش</SectionBadge>
+          <h1 className={cn("mt-3", sectionTitle)}>ارسال‌های من</h1>
+          <p className="mt-1 max-w-xl text-sm text-white/55">
+            لینک ریل و اسکرین‌شات را بفرست، مسیر بررسی و پرداخت را همین‌جا دنبال کن.{" "}
+            <Link href="/help/ersal-post" className="text-brand hover:text-brand-soft">
+              راهنمای ارسال
+            </Link>
+          </p>
         </div>
+        <ReviewSlaPromise />
       </header>
 
-      <section className={cn(brandGlassCard, "space-y-4 p-5")}>
+      <section className={cn(brandGlassCard, "space-y-4 p-5 sm:p-6")}>
         <div className="flex items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand/12 text-brand">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-brand-ink">
             <Send className="size-5" />
           </div>
           <div>
-            <h2 className="font-bold text-white">ارسال پست جدید</h2>
+            <h2 className="text-base font-bold text-white">ثبت پست جدید</h2>
             <p className="mt-1 text-sm text-white/55">
-              لینک پست یا ریلز را همراه اسکرین‌شات صفحه پست بفرستید. بررسی حداکثر
-              ۴۸ ساعت است و زمان دقیق نتیجه بعد از ثبت مشخص می‌شود.
+              کمپین را انتخاب کن، لینک ریل را بگذار و یک اسکرین‌شات از صفحه پست
+              بفرست. بعد از ثبت، زمان دقیق اعلام نتیجه را می‌بینی.
             </p>
           </div>
         </div>
 
         {!verified && (
-          <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 p-4 text-sm text-amber-100/90">
-            حساب اینستاگرام شما هنوز تأیید نشده است.
-            <Link
-              href="/profile"
-              className="mr-2 inline-flex items-center gap-1 text-brand hover:text-brand-soft"
-            >
-              <ShieldCheck className="size-3.5" />
-              تأیید در پروفایل
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.08] p-4">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="size-5 shrink-0 text-amber-300" />
+              <div>
+                <div className="text-sm font-semibold text-amber-100">
+                  اول پیج اینستاگرامت را تأیید کن
+                </div>
+                <p className="mt-0.5 text-xs text-amber-100/70">
+                  بدون تأیید پیج نمی‌توانی پست ثبت کنی. کمتر از یک دقیقه طول می‌کشد.
+                </p>
+              </div>
+            </div>
+            <Link href="/profile" className={cn(brandCta, "px-4 py-2 text-sm")}>
+              تأیید پیج
             </Link>
           </div>
         )}
@@ -320,32 +298,37 @@ export default function PostsPage() {
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">کمپین</span>
+              <span className="text-xs font-semibold text-white/55">۱. کمپین</span>
               <select
                 value={campaignId}
                 onChange={(event) => setCampaignId(event.target.value)}
-                className={cn(
-                  "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white",
-                  formFocus
-                )}
+                className={cn(formInput, formFocus)}
               >
                 <option value="">انتخاب کمپین</option>
                 {campaigns.map((campaign) => (
                   <option key={campaign.id} value={campaign.id}>
-                    {campaign.title} ({campaign.remainingSubmissions} ارسال باقی)
+                    {campaign.title} ({formatToman(campaign.remainingSubmissions)} ارسال باقی)
                   </option>
                 ))}
               </select>
             </label>
 
             {selectedCampaign && (
-              <div className="space-y-2">
-                <p className="text-xs text-white/40">
-                  پاداش پایه {formatToman(selectedCampaign.basePayoutToman)} تومان
-                  {" · "}
-                  سقف ارسال {formatToman(selectedCampaign.maxSubmissionsPerUser)}
-                  {" · "}
-                  باقی‌مانده {formatToman(selectedCampaign.remainingSubmissions)}
+              <div className="space-y-3 rounded-2xl border border-brand/20 bg-brand/[0.05] p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="text-xs text-white/50">درآمد این ریل</div>
+                  <div className="earn-money text-xl text-white">
+                    {formatTomanCompact(selectedCampaign.basePayoutToman)}
+                    <span className="mx-1.5 text-sm font-medium text-white/35">تا</span>
+                    <span className="text-brand">
+                      {formatTomanCompact(selectedCampaign.maxPayoutPerVideoToman)}
+                    </span>
+                    <span className="mr-1 text-[11px] font-medium text-white/40">تومان</span>
+                  </div>
+                </div>
+                <p className="text-xs text-white/45">
+                  {formatToman(selectedCampaign.remainingSubmissions)} ارسال از{" "}
+                  {formatToman(selectedCampaign.maxSubmissionsPerUser)} برایت باقی مانده
                 </p>
                 <CampaignBudgetMeter
                   spentBudgetToman={selectedCampaign.spentBudgetToman}
@@ -358,21 +341,18 @@ export default function PostsPage() {
             )}
 
             <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">لینک پست اینستاگرام</span>
+              <span className="text-xs font-semibold text-white/55">۲. لینک پست اینستاگرام</span>
               <input
                 value={postUrl}
                 onChange={(event) => setPostUrl(event.target.value)}
                 placeholder="https://www.instagram.com/reel/..."
                 dir="ltr"
-                className={cn(
-                  "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left text-sm text-white placeholder:text-white/35",
-                  formFocus
-                )}
+                className={cn(formInput, formFocus, "text-left")}
               />
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">اسکرین‌شات اثبات</span>
+              <span className="text-xs font-semibold text-white/55">۳. اسکرین‌شات صفحه پست</span>
               <div className="flex flex-wrap items-center gap-3">
                 <label
                   className={cn(
@@ -406,19 +386,23 @@ export default function PostsPage() {
             </label>
 
             {formError && (
-              <p className="text-sm text-rose-300">{formError}</p>
+              <p className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                {formError}
+              </p>
             )}
             {formSuccess && (
-              <p className="text-sm text-emerald-300">{formSuccess}</p>
+              <p className="rounded-xl border border-cash/30 bg-cash/10 px-3 py-2 text-sm text-cash">
+                {formSuccess}
+              </p>
             )}
 
             <button
               type="submit"
               disabled={submitting || !verified}
-              className={cn(brandCta, "px-5 py-2.5 text-sm disabled:opacity-50")}
+              className={cn(brandCta, "h-12 w-full px-5 text-sm sm:w-auto")}
             >
               {submitting && <Loader2 className="size-4 animate-spin" />}
-              {submitting ? "در حال ارسال..." : "ثبت ارسال"}
+              {submitting ? "در حال ارسال..." : "ثبت و ارسال به بررسی"}
             </button>
           </form>
         )}
@@ -431,13 +415,21 @@ export default function PostsPage() {
       )}
 
       {submissions.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-sm text-white/45">
-          هنوز پستی ارسال نکرده‌اید.
+        <div className={cn(brandGlassCard, "px-6 py-14 text-center")}>
+          <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-brand/12 text-brand">
+            <Wand2 className="size-5" />
+          </div>
+          <h3 className="mt-4 font-bold text-white">هنوز پستی ثبت نکرده‌ای</h3>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm text-white/50">
+            اولین ریلت را با بنانا بساز، منتشر کن و لینکش را از فرم بالا بفرست.
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-white/70">
+            {formatToman(submissions.length)} ارسال
+          </h2>
           {submissions.map((sub) => {
-            const StatusIcon = statusIcon[sub.status] || Hourglass;
             const totalPayout = sub.basePayoutToman + sub.bonusToman;
             return (
               <article
@@ -445,22 +437,15 @@ export default function PostsPage() {
                 className={cn(brandGlassCard, brandGlassCardHover, "p-4 sm:p-5")}
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-semibold text-white">
+                  <h2 className="font-bold text-white">
                     {sub.campaignTitle}
                   </h2>
                   <PlatformBadge platform={sub.platform} />
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]",
-                      statusClass[sub.status]
-                    )}
-                  >
-                    <StatusIcon className="size-3" />
-                    {statusLabel[sub.status] || sub.status}
-                  </span>
+                  <SubmissionStatusBadge status={sub.status} />
                 </div>
+                <SubmissionTimeline status={sub.status} className="mt-4 max-w-md" />
                 {sub.status === "pending" && (
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <ReviewSlaNotice startedAt={sub.resubmittedAt ?? sub.createdAt} />
                   </div>
                 )}
@@ -528,13 +513,14 @@ export default function PostsPage() {
                       <ExternalLink className="size-3.5" />
                     </a>
                   )}
-                  <div className="mr-auto flex items-center gap-2 rounded-full border border-white/8 bg-black/20 px-3 py-1.5 text-xs text-white/60">
-                    <span>پایه: {formatToman(sub.basePayoutToman)}</span>
+                  <div className="mr-auto flex items-center gap-2 rounded-full border border-white/8 bg-black/25 px-3 py-1.5 text-xs text-white/55">
+                    <span>پایه {formatTomanCompact(sub.basePayoutToman)}</span>
                     <span className="text-white/25">+</span>
-                    <span>پاداش: {formatToman(sub.bonusToman)}</span>
+                    <span>بازدید {formatTomanCompact(sub.bonusToman)}</span>
                     <span className="text-white/25">=</span>
-                    <span className="font-bold text-brand">
-                      {formatToman(totalPayout)} تومان
+                    <span className="earn-money text-sm text-brand">
+                      {formatToman(totalPayout)}
+                      <span className="mr-1 text-[10px] font-medium text-brand/70">تومان</span>
                     </span>
                   </div>
                 </div>
@@ -647,7 +633,7 @@ function ResubmitForm({
   return (
     <form
       onSubmit={submit}
-      className="mt-3 space-y-3 rounded-xl border border-orange-500/20 bg-orange-950/10 p-3"
+      className="mt-3 space-y-3 rounded-2xl border border-orange-500/25 bg-orange-500/[0.06] p-4"
     >
       <p className="text-xs text-white/55">
         فقط یک‌بار می‌توانید این ارسال را اصلاح کنید. همان پست را درست کنید
@@ -661,10 +647,7 @@ function ResubmitForm({
           value={postUrl}
           onChange={(event) => setPostUrl(event.target.value)}
           dir="ltr"
-          className={cn(
-            "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-left text-sm text-white placeholder:text-white/35",
-            formFocus
-          )}
+          className={cn(formInput, formFocus, "text-left")}
         />
       </label>
       <label className="block space-y-1.5">
