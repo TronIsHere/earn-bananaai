@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -62,23 +63,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const userId = session?.user?.id;
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AppState>(defaultState);
+  const hydratedUserIdRef = useRef<string | null | undefined>(undefined);
+  const sessionUserRef = useRef(session?.user);
+  sessionUserRef.current = session?.user;
 
   useEffect(() => {
     if (status === "loading") return;
 
     let cancelled = false;
+    const nextUserId = userId ?? null;
+
+    // `undefined` means never hydrated. After guest hydrate the ref is `null`.
+    // Skip when this auth identity is already loaded so soft navs do not flash.
+    if (hydratedUserIdRef.current === nextUserId) {
+      return;
+    }
+
+    setReady(false);
 
     async function hydrate() {
-      if (!userId || !session?.user) {
+      const sessionUser = sessionUserRef.current;
+      if (!nextUserId || !sessionUser) {
         setState(defaultState());
+        hydratedUserIdRef.current = null;
         setReady(true);
         return;
       }
 
-      const local = loadState(userId);
+      const local = loadState(nextUserId);
       let profile: Profile = {
         ...local.profile,
-        ...profileFromUser(session.user),
+        ...profileFromUser(sessionUser),
       };
       let wallet = local.wallet;
 
@@ -97,16 +112,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       if (cancelled) return;
       setState({ ...local, profile, wallet });
+      hydratedUserIdRef.current = nextUserId;
       setReady(true);
     }
 
-    setReady(false);
-    hydrate();
+    void hydrate();
 
     return () => {
       cancelled = true;
     };
-  }, [status, userId, session]);
+  }, [status, userId]);
 
   useEffect(() => {
     if (!ready || !userId) return;
