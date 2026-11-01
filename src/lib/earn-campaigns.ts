@@ -2,13 +2,13 @@ import "server-only";
 import mongoose, { type Types } from "mongoose";
 import { isCampaignOpen, type EarnCampaignStatus, type EarnPlatform } from "@/lib/earn";
 import connectDB from "@/lib/mongodb";
-import type { ViewBonusTier } from "@/lib/types";
+import type { PromptPackItem, ViewBonusTier } from "@/lib/types";
 import EarnCampaign, { type IEarnCampaign } from "@/models/earn-campaign";
 
 export type CampaignErrorCode =
   | "NOT_FOUND"
   | "INVALID"
-  | "PAYOUT_CAP";
+;
 
 export class CampaignError extends Error {
   constructor(
@@ -31,7 +31,6 @@ export interface CampaignJson {
   requiredMentions: string[];
   minVideoLengthSeconds: number;
   mediaKitUrls: string[];
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   maxSubmissionsPerUser: number;
@@ -41,6 +40,8 @@ export interface CampaignJson {
   status: EarnCampaignStatus;
   createdAt: string;
   trending: boolean;
+  toolUrl: string | null;
+  promptPack: PromptPackItem[];
 }
 
 export type CampaignLean = IEarnCampaign & { _id: Types.ObjectId };
@@ -70,7 +71,6 @@ export function serializeCampaign(doc: CampaignLean): CampaignJson {
     requiredMentions: doc.requiredMentions ?? [],
     minVideoLengthSeconds: doc.minVideoLengthSeconds ?? 0,
     mediaKitUrls: doc.mediaKitUrls ?? [],
-    basePayoutToman: doc.basePayoutToman,
     viewBonusTiers: doc.viewBonusTiers ?? [],
     maxPayoutPerVideoToman: doc.maxPayoutPerVideoToman,
     maxSubmissionsPerUser: doc.maxSubmissionsPerUser,
@@ -80,6 +80,11 @@ export function serializeCampaign(doc: CampaignLean): CampaignJson {
     status: doc.status,
     createdAt: toIso(doc.createdAt) ?? new Date().toISOString(),
     trending: Boolean(doc.trending),
+    toolUrl: doc.toolUrl ?? null,
+    promptPack: (doc.promptPack ?? []).map((item) => ({
+      title: item.title,
+      prompt: item.prompt,
+    })),
   };
 }
 
@@ -108,7 +113,6 @@ export interface CreateCampaignInput {
   requiredMentions: string[];
   minVideoLengthSeconds: number;
   mediaKitUrls: string[];
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   maxSubmissionsPerUser: number;
@@ -116,6 +120,8 @@ export interface CreateCampaignInput {
   deadline: Date | null;
   status: EarnCampaignStatus;
   trending: boolean;
+  toolUrl: string | null;
+  promptPack: PromptPackItem[];
   createdBy: string;
 }
 
@@ -133,7 +139,6 @@ export async function createCampaign(
       requiredMentions: input.requiredMentions,
       minVideoLengthSeconds: input.minVideoLengthSeconds,
       mediaKitUrls: input.mediaKitUrls,
-      basePayoutToman: input.basePayoutToman,
       viewBonusTiers: input.viewBonusTiers,
       maxPayoutPerVideoToman: input.maxPayoutPerVideoToman,
       maxSubmissionsPerUser: input.maxSubmissionsPerUser,
@@ -142,6 +147,8 @@ export async function createCampaign(
       deadline: input.deadline,
       status: input.status,
       trending: input.trending,
+      toolUrl: input.toolUrl,
+      promptPack: input.promptPack,
       createdBy: new mongoose.Types.ObjectId(input.createdBy),
     });
     return serializeCampaign(created.toObject() as CampaignLean);
@@ -180,9 +187,6 @@ export async function updateCampaign(
     campaign.minVideoLengthSeconds = patch.minVideoLengthSeconds;
   }
   if (patch.mediaKitUrls !== undefined) campaign.mediaKitUrls = patch.mediaKitUrls;
-  if (patch.basePayoutToman !== undefined) {
-    campaign.basePayoutToman = patch.basePayoutToman;
-  }
   if (patch.viewBonusTiers !== undefined) {
     campaign.viewBonusTiers = patch.viewBonusTiers;
   }
@@ -198,6 +202,8 @@ export async function updateCampaign(
   if (patch.deadline !== undefined) campaign.deadline = patch.deadline;
   if (patch.status !== undefined) campaign.status = patch.status;
   if (patch.trending !== undefined) campaign.trending = patch.trending;
+  if (patch.toolUrl !== undefined) campaign.toolUrl = patch.toolUrl;
+  if (patch.promptPack !== undefined) campaign.promptPack = patch.promptPack;
 
   try {
     await campaign.save();
@@ -211,16 +217,7 @@ export async function updateCampaign(
 function mapCampaignWriteError(error: unknown): CampaignError {
   if (error instanceof CampaignError) return error;
   if (error instanceof mongoose.Error.ValidationError) {
-    const payoutCap = Object.values(error.errors).some((item) =>
-      item.message.includes("maxPayoutPerVideoToman")
-    );
-    return new CampaignError(
-      payoutCap
-        ? "سقف هر ویدیو باید حداقل برابر پاداش پایه باشد"
-        : "اطلاعات کمپین نامعتبر است",
-      payoutCap ? "PAYOUT_CAP" : "INVALID",
-      400
-    );
+    return new CampaignError("اطلاعات کمپین نامعتبر است", "INVALID", 400);
   }
   const message =
     error instanceof Error ? error.message : "خطا در ذخیره کمپین";

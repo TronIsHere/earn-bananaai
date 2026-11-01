@@ -43,7 +43,7 @@ export default function LoginPage() {
       <ul className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[11px] text-white/45">
         {[
           `بررسی ${formatToman(REVIEW_SLA_HOURS)} ساعته`,
-          "واریز به شبا یا کارت",
+          "واریز به شبا",
           "عضویت رایگان",
         ].map((item) => (
           <li key={item} className="inline-flex items-center gap-1">

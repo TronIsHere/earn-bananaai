@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Loader2, UserRound } from "lucide-react";
+import { Check, Landmark, Loader2, UserRound } from "lucide-react";
+import {
+  BankDetailsForm,
+  BankDetailsSummary,
+} from "@/components/bank-details-form";
 import { InstagramVerificationCard } from "@/components/instagram-verification-card";
 import { SectionBadge } from "@/components/section-badge";
 import { useStore } from "@/components/store-provider";
@@ -20,6 +24,7 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [editingBank, setEditingBank] = useState(false);
 
   if (!ready) {
     return (
@@ -109,6 +114,32 @@ export default function ProfilePage() {
           )}
         </button>
         {saveError && <p className="text-xs text-rose-400">{saveError}</p>}
+      </section>
+
+      <section
+        id="bank"
+        className={cn(brandGlassCard, "scroll-mt-24 space-y-4 p-5 sm:p-6")}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand/12 text-brand">
+            <Landmark className="size-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white">حساب بانکی برای واریز</h2>
+            <p className="mt-1 text-xs text-white/45">
+              شبا را یک بار ثبت کن. برای همه درخواست‌های واریز از همین حساب
+              استفاده می‌شود.
+            </p>
+          </div>
+        </div>
+        {p.bankSheba && !editingBank ? (
+          <BankDetailsSummary onEdit={() => setEditingBank(true)} />
+        ) : (
+          <BankDetailsForm
+            onSaved={() => setEditingBank(false)}
+            onCancel={p.bankSheba ? () => setEditingBank(false) : undefined}
+          />
+        )}
       </section>
     </div>
   );

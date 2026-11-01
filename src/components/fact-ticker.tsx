@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import {
-  DEFAULT_BASE_PAYOUT_TOMAN,
   DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN,
+  MIN_PAID_VIEWS,
   MIN_PAYOUT_TOMAN,
   REVIEW_SLA_HOURS,
 } from "@/lib/earn";
@@ -10,12 +10,12 @@ import { cn, formatToman, formatTomanCompact } from "@/lib/utils";
 /** Factual program highlights on an endless lime strip. No fake social proof. */
 export function FactTicker({ className }: { className?: string }) {
   const facts = [
-    `پاداش پایه هر ریل ${formatTomanCompact(DEFAULT_BASE_PAYOUT_TOMAN)} تومان`,
+    `پرداخت از ${formatToman(MIN_PAID_VIEWS)} بازدید`,
     `سقف پاداش هر ریل ${formatTomanCompact(DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN)} تومان`,
     `بررسی حداکثر ${formatToman(REVIEW_SLA_HOURS)} ساعته`,
     "پاداش بازدید در روز هفتم",
     `حداقل برداشت ${formatTomanCompact(MIN_PAYOUT_TOMAN)} تومان`,
-    "واریز مستقیم به شبا یا کارت",
+    "واریز مستقیم به شبا",
     "بدون هزینه عضویت",
     "ساخت محتوا با هوش مصنوعی بنانا",
   ];

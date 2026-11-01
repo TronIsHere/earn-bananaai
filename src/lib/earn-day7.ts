@@ -2,6 +2,7 @@ import "server-only";
 import mongoose, { type Types } from "mongoose";
 import {
   computeViewBonusToman,
+  DAY7_ELIGIBLE_STATUSES,
   EARN_SUBMISSION_STATUSES,
   matchViewBonusTier,
   sumReachedViewBonusToman,
@@ -13,14 +14,20 @@ import {
   EarnWalletError,
 } from "@/lib/earn-wallet";
 import connectDB from "@/lib/mongodb";
+import type {
+  AdminSubmissionJson,
+  AdminSubmissionCampaignJson,
+  AdminSubmissionUserJson,
+} from "@/lib/earn-submissions-types";
 import type { ViewBonusTier } from "@/lib/types";
 import EarnCampaign from "@/models/earn-campaign";
 import EarnSubmission from "@/models/earn-submission";
 
-export const DAY7_ELIGIBLE_STATUSES: EarnSubmissionStatus[] = [
-  "bonus_pending",
-  "approved",
-];
+export type {
+  AdminSubmissionJson,
+  AdminSubmissionCampaignJson,
+  AdminSubmissionUserJson,
+};
 
 export type Day7ErrorCode =
   | "INVALID_ID"
@@ -43,43 +50,6 @@ export class Day7Error extends Error {
   }
 }
 
-export interface AdminSubmissionUserJson {
-  id: string;
-  firstName: string;
-  lastName: string;
-  instagramHandle: string | null;
-  mobileNumber: string;
-}
-
-export interface AdminSubmissionCampaignJson {
-  id: string;
-  title: string;
-  viewBonusTiers: ViewBonusTier[];
-  maxPayoutPerVideoToman: number;
-  basePayoutToman: number;
-  spentBudgetToman: number;
-  totalBudgetToman: number;
-}
-
-export interface AdminSubmissionJson {
-  id: string;
-  status: EarnSubmissionStatus;
-  instagramPostUrl: string;
-  proofScreenshotUrl: string;
-  reviewerNote: string | null;
-  resubmitCount: number;
-  basePayoutToman: number;
-  bonusToman: number;
-  day7Views: number | null;
-  basePaidAt: string | null;
-  bonusPaidAt: string | null;
-  finalizedAt: string | null;
-  createdAt: string;
-  resubmittedAt: string | null;
-  user: AdminSubmissionUserJson | null;
-  campaign: AdminSubmissionCampaignJson | null;
-}
-
 type PopulatedUser = {
   _id: Types.ObjectId;
   firstName: string;
@@ -93,7 +63,6 @@ type PopulatedCampaign = {
   title: string;
   viewBonusTiers?: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
-  basePayoutToman: number;
   spentBudgetToman: number;
   totalBudgetToman: number;
 };
@@ -109,6 +78,9 @@ export type AdminSubmissionDoc = {
   basePayoutToman: number;
   bonusToman: number;
   day7Views: number | null;
+  day7ClaimedViews?: number | null;
+  day7ProofScreenshotUrl?: string | null;
+  day7ProofSubmittedAt?: Date | string | null;
   basePaidAt: Date | string | null;
   bonusPaidAt: Date | string | null;
   finalizedAt: Date | string | null;
@@ -121,7 +93,7 @@ const ADMIN_POPULATE = [
   {
     path: "campaignId",
     select:
-      "title viewBonusTiers maxPayoutPerVideoToman basePayoutToman spentBudgetToman totalBudgetToman",
+      "title viewBonusTiers maxPayoutPerVideoToman spentBudgetToman totalBudgetToman",
   },
   {
     path: "userId",
@@ -170,7 +142,6 @@ export function serializeAdminSubmission(
         title: doc.campaignId.title,
         viewBonusTiers: doc.campaignId.viewBonusTiers ?? [],
         maxPayoutPerVideoToman: doc.campaignId.maxPayoutPerVideoToman,
-        basePayoutToman: doc.campaignId.basePayoutToman,
         spentBudgetToman: doc.campaignId.spentBudgetToman,
         totalBudgetToman: doc.campaignId.totalBudgetToman,
       }
@@ -186,6 +157,9 @@ export function serializeAdminSubmission(
     basePayoutToman: doc.basePayoutToman,
     bonusToman: doc.bonusToman,
     day7Views: doc.day7Views,
+    day7ClaimedViews: doc.day7ClaimedViews ?? null,
+    day7ProofScreenshotUrl: doc.day7ProofScreenshotUrl ?? null,
+    day7ProofSubmittedAt: toIso(doc.day7ProofSubmittedAt),
     basePaidAt: toIso(doc.basePaidAt),
     bonusPaidAt: toIso(doc.bonusPaidAt),
     finalizedAt: toIso(doc.finalizedAt),
@@ -255,14 +229,15 @@ export interface EnterDay7ViewBonusResult {
 }
 
 /**
- * Admin enters day-7 views: pick highest matching tier, cap by
- * maxPayoutPerVideoToman - base, credit wallet when bonus > 0, finalize.
+ * Admin enters day-7 views: sum reached tiers (nothing under MIN_PAID_VIEWS),
+ * cap by maxPayoutPerVideoToman, credit wallet when bonus > 0, finalize.
  */
 export async function enterDay7ViewBonus(params: {
   submissionId: string;
   views: number;
+  reviewerId?: string;
 }): Promise<EnterDay7ViewBonusResult> {
-  const { submissionId, views } = params;
+  const { submissionId, views, reviewerId } = params;
 
   if (!mongoose.Types.ObjectId.isValid(submissionId)) {
     throw new Day7Error("شناسه ارسال نامعتبر است", "INVALID_ID", 400);
@@ -297,8 +272,8 @@ export async function enterDay7ViewBonus(params: {
     throw new Day7Error("کمپین پیدا نشد", "CAMPAIGN_NOT_FOUND", 404);
   }
 
-  const basePayoutToman =
-    submission.basePayoutToman || campaign.basePayoutToman;
+  // Legacy submissions were credited a base on approval; it still counts toward the cap.
+  const basePayoutToman = submission.basePayoutToman ?? 0;
   const tiers = campaign.viewBonusTiers ?? [];
   const matchedTier = matchViewBonusTier(views, tiers);
   const remainingCap = viewBonusRemainingCap(
@@ -339,6 +314,12 @@ export async function enterDay7ViewBonus(params: {
         userId: claimed.userId,
         campaignId: claimed.campaignId,
         amountToman: bonusToman,
+        kind: "bonus",
+        ledger: {
+          submissionId,
+          actorId: reviewerId,
+          idempotencyKey: `bonus:${submissionId}`,
+        },
       });
       wallet = {
         balance: credited.balance,

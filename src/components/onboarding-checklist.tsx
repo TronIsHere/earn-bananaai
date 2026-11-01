@@ -10,6 +10,7 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import { brandCta, brandGlassCard } from "@/lib/brand";
+import { MIN_PAID_VIEWS } from "@/lib/earn";
 import { cn, formatToman } from "@/lib/utils";
 
 export type ChecklistStepState = "done" | "current" | "pending" | "todo";
@@ -70,7 +71,7 @@ export function buildOnboardingSteps(input: {
       key: "paid",
       icon: Banknote,
       title: "اولین پاداشت را بگیر",
-      hint: "بعد از تأیید، پاداش پایه به کیف پولت واریز می‌شود.",
+      hint: `وقتی ریلت به ${formatToman(MIN_PAID_VIEWS)} بازدید برسد، روز هفتم پاداشش به کیف پولت می‌آید.`,
       state: paid ? "done" : hasSubmission ? "pending" : "todo",
       href: "/billing",
       cta: "کیف پول",

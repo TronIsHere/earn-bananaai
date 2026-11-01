@@ -5,8 +5,8 @@ import type { ViewBonusTier } from "./types";
 /** One good video should clear this so the first cash-out creates believers. */
 export const MIN_PAYOUT_TOMAN = 400_000;
 
-/** Floor high enough that posting is worth the effort even before bonuses. */
-export const DEFAULT_BASE_PAYOUT_TOMAN = 400_000;
+/** No flat payout on approval: a reel earns nothing until it reaches this many views. */
+export const MIN_PAID_VIEWS = 1_000;
 export const DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN = 7_000_000;
 export const DEFAULT_CAMPAIGN_BUDGET_TOMAN = 40_000_000;
 
@@ -18,7 +18,7 @@ export const REVIEW_SLA_DUE_SOON_HOURS = 6;
 export const REVIEW_SLA_LABEL = "بررسی حداکثر ۴۸ ساعت";
 
 export const DEFAULT_VIEW_BONUS_TIERS = [
-  { minViews: 1_000, bonusToman: 100_000 },
+  { minViews: MIN_PAID_VIEWS, bonusToman: 100_000 },
   { minViews: 5_000, bonusToman: 300_000 },
   { minViews: 20_000, bonusToman: 500_000 },
   { minViews: 50_000, bonusToman: 750_000 },
@@ -95,6 +95,41 @@ export function canResubmitSubmission(submission: {
   );
 }
 
+/** Statuses where the post is approved and the day-7 view payout is still open. */
+export const DAY7_ELIGIBLE_STATUSES: readonly EarnSubmissionStatus[] = [
+  "bonus_pending",
+  "approved",
+];
+
+/** Days after submitting a post before its insights are worth screenshotting. */
+export const DAY7_INSIGHTS_DELAY_DAYS = 7;
+
+export function day7InsightsOpensAt(submittedAt: Date | string): Date | null {
+  const start = submittedAt instanceof Date ? submittedAt : new Date(submittedAt);
+  if (Number.isNaN(start.getTime())) return null;
+  return new Date(
+    start.getTime() + DAY7_INSIGHTS_DELAY_DAYS * 24 * 60 * 60 * 1000,
+  );
+}
+
+/** Whether the creator can send day-7 insights for this submission right now. */
+export function canSubmitDay7Insights(
+  submission: {
+    status: string;
+    createdAt: Date | string;
+    finalizedAt?: Date | string | null;
+    day7Views?: number | null;
+  },
+  now = new Date(),
+): boolean {
+  if (!(DAY7_ELIGIBLE_STATUSES as readonly string[]).includes(submission.status)) {
+    return false;
+  }
+  if (submission.finalizedAt || submission.day7Views != null) return false;
+  const opensAt = day7InsightsOpensAt(submission.createdAt);
+  return opensAt != null && opensAt.getTime() <= now.getTime();
+}
+
 export const EARN_PAYOUT_STATUSES = ["pending", "paid", "rejected"] as const;
 
 export const EARN_VERIFICATION_STATUSES = [
@@ -158,42 +193,42 @@ export function sumReachedViewBonusToman(
     .reduce((sum, tier) => sum + tier.bonusToman, 0);
 }
 
-/** Remaining bonus room so base + bonus never exceeds the per-video cap. */
+/**
+ * Remaining bonus room under the per-video cap. `alreadyPaidToman` is only
+ * non-zero for legacy submissions that were credited a base payout on approval.
+ */
 export function viewBonusRemainingCap(
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number,
+  alreadyPaidToman = 0,
 ): number {
-  return Math.max(0, maxPayoutPerVideoToman - basePayoutToman);
+  return Math.max(0, maxPayoutPerVideoToman - alreadyPaidToman);
 }
 
 /**
- * Sum of reached stage bonuses, capped so base + bonus never exceeds
- * max payout per video. Hitting the top stage typically pays the full cap.
+ * Sum of reached stage bonuses, capped at max payout per video. Below
+ * MIN_PAID_VIEWS nothing is paid. Hitting the top stage typically pays the full cap.
  */
 export function computeViewBonusToman(
   views: number,
   tiers: ViewBonusTier[],
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number,
+  alreadyPaidToman = 0,
 ): number {
+  if (views < MIN_PAID_VIEWS) return 0;
   const bonus = sumReachedViewBonusToman(views, tiers);
   return Math.min(
     bonus,
-    viewBonusRemainingCap(maxPayoutPerVideoToman, basePayoutToman),
+    viewBonusRemainingCap(maxPayoutPerVideoToman, alreadyPaidToman),
   );
 }
 
-/** Base payout plus the capped view bonus for a hypothetical view count. */
+/** What a reel earns at a hypothetical view count (capped per video). */
 export function computeCampaignPayoutToman(
   views: number,
   tiers: ViewBonusTier[],
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number,
 ): number {
-  return (
-    basePayoutToman +
-    computeViewBonusToman(views, tiers, maxPayoutPerVideoToman, basePayoutToman)
-  );
+  return computeViewBonusToman(views, tiers, maxPayoutPerVideoToman);
 }
 
 /** Next unpaid view-bonus tier above `views`, or null at the top. */
@@ -265,12 +300,11 @@ export type CampaignBudgetUrgency = "ok" | "low" | "critical" | "empty";
 export function campaignBudgetUrgency(
   remaining: number,
   totalBudgetToman: number,
-  basePayoutToman = 0,
 ): CampaignBudgetUrgency {
   if (totalBudgetToman <= 0) return "ok";
   if (remaining <= 0) return "empty";
   const ratio = remaining / totalBudgetToman;
-  if (remaining < basePayoutToman || ratio <= 0.1) return "critical";
+  if (ratio <= 0.1) return "critical";
   if (ratio <= 0.25) return "low";
   return "ok";
 }

@@ -15,6 +15,11 @@ export interface ViewBonusTier {
   bonusToman: number;
 }
 
+export interface PromptPackItem {
+  title: string;
+  prompt: string;
+}
+
 export interface Campaign {
   id: string;
   title: string;
@@ -23,7 +28,6 @@ export interface Campaign {
   requirementsChecklist: string[];
   requiredHashtags: string[];
   requiredMentions: string[];
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   maxSubmissionsPerUser: number;
@@ -33,6 +37,9 @@ export interface Campaign {
   status: CampaignStatus;
   createdAt: string;
   trending?: boolean;
+  /** BananaAI tool link; `{prompt}` is replaced by the chosen prompt. */
+  toolUrl?: string | null;
+  promptPack?: PromptPackItem[];
 }
 
 export interface Submission {
@@ -77,4 +84,6 @@ export interface Profile {
   verificationCode: string;
   verificationNote: string | null;
   verificationRequestedAt: string | null;
+  bankSheba: string | null;
+  bankAccountHolder: string | null;
 }

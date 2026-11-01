@@ -5,7 +5,11 @@ import { EARN_PAYOUT_STATUSES, type EarnPayoutStatus } from "@/lib/earn";
 export interface IEarnPayout {
   userId: Types.ObjectId;
   amount: number;
+  /** Legacy free-text account details. New requests use the SHEBA fields. */
   bankNote: string;
+  /** Snapshot of the creator's SHEBA at request time. */
+  bankSheba: string | null;
+  bankAccountHolder: string | null;
   status: EarnPayoutStatus;
   reviewedBy: Types.ObjectId | null;
   reviewedAt: Date | null;
@@ -29,9 +33,21 @@ const EarnPayoutSchema = new Schema<IEarnPayout>(
     },
     bankNote: {
       type: String,
-      required: true,
       trim: true,
       maxlength: 500,
+      default: "",
+    },
+    bankSheba: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+    },
+    bankAccountHolder: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+      default: null,
     },
     status: {
       type: String,
@@ -67,6 +83,13 @@ EarnPayoutSchema.index(
   { userId: 1 },
   { unique: true, partialFilterExpression: { status: "pending" } }
 );
+
+const existingModel = mongoose.models.EarnPayout as
+  | Model<IEarnPayout>
+  | undefined;
+if (existingModel && !existingModel.schema.path("bankSheba")) {
+  mongoose.deleteModel("EarnPayout");
+}
 
 const EarnPayout: Model<IEarnPayout> =
   mongoose.models.EarnPayout ||

@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
     const result = await requestEarnPayout({
       userId: session.user.id,
       amount: parsed.data.amount,
-      bankNote: parsed.data.bankNote,
     });
     return NextResponse.json({
       success: true,

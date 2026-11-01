@@ -5,7 +5,7 @@ import {
   EARN_PLATFORMS,
   type EarnCampaignStatus,
 } from "@/lib/earn";
-import type { ViewBonusTier } from "@/lib/types";
+import type { PromptPackItem, ViewBonusTier } from "@/lib/types";
 
 export interface IEarnCampaign {
   title: string;
@@ -15,7 +15,6 @@ export interface IEarnCampaign {
   requiredMentions: string[];
   minVideoLengthSeconds: number;
   mediaKitUrls: string[];
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   maxSubmissionsPerUser: number;
@@ -25,6 +24,8 @@ export interface IEarnCampaign {
   status: EarnCampaignStatus;
   platform: (typeof EARN_PLATFORMS)[number];
   trending: boolean;
+  toolUrl: string | null;
+  promptPack: PromptPackItem[];
   createdBy: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +35,14 @@ const ViewBonusTierSchema = new Schema<ViewBonusTier>(
   {
     minViews: { type: Number, required: true, min: 0 },
     bonusToman: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
+const PromptPackItemSchema = new Schema<PromptPackItem>(
+  {
+    title: { type: String, required: true, trim: true, maxlength: 80 },
+    prompt: { type: String, required: true, trim: true, maxlength: 1000 },
   },
   { _id: false }
 );
@@ -72,11 +81,6 @@ const EarnCampaignSchema = new Schema<IEarnCampaign>(
     mediaKitUrls: {
       type: [String],
       default: [],
-    },
-    basePayoutToman: {
-      type: Number,
-      required: true,
-      min: 0,
     },
     viewBonusTiers: {
       type: [ViewBonusTierSchema],
@@ -125,6 +129,16 @@ const EarnCampaignSchema = new Schema<IEarnCampaign>(
       type: Boolean,
       default: false,
     },
+    toolUrl: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null,
+    },
+    promptPack: {
+      type: [PromptPackItemSchema],
+      default: [],
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
@@ -134,10 +148,6 @@ const EarnCampaignSchema = new Schema<IEarnCampaign>(
   { timestamps: true }
 );
 
-EarnCampaignSchema.path("maxPayoutPerVideoToman").validate(function (value: number) {
-  return value >= this.basePayoutToman;
-}, "maxPayoutPerVideoToman must be >= basePayoutToman");
-
 EarnCampaignSchema.pre("validate", function () {
   if (Array.isArray(this.viewBonusTiers) && this.viewBonusTiers.length > 1) {
     this.viewBonusTiers.sort((a, b) => a.minViews - b.minViews);
@@ -146,6 +156,17 @@ EarnCampaignSchema.pre("validate", function () {
 
 EarnCampaignSchema.index({ status: 1, deadline: 1 });
 EarnCampaignSchema.index({ createdAt: -1 });
+
+const existingModel = mongoose.models.EarnCampaign as
+  | Model<IEarnCampaign>
+  | undefined;
+if (
+  existingModel &&
+  (!existingModel.schema.path("promptPack") ||
+    existingModel.schema.path("basePayoutToman"))
+) {
+  mongoose.deleteModel("EarnCampaign");
+}
 
 const EarnCampaign: Model<IEarnCampaign> =
   mongoose.models.EarnCampaign ||

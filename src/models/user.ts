@@ -24,6 +24,10 @@ export interface IUser {
   earnWalletBalance: number;
   earnWalletLifetimeEarned: number;
   earnWalletLifetimePaidOut: number;
+  /** Canonical `IR` + 24 digits. Payouts snapshot it at request time. */
+  earnBankSheba: string | null;
+  earnBankAccountHolder: string | null;
+  earnBankUpdatedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -117,6 +121,23 @@ const UserSchema = new Schema<IUser>(
       default: 0,
       min: 0,
     },
+    earnBankSheba: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+      match: /^IR\d{24}$/,
+    },
+    earnBankAccountHolder: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+      default: null,
+    },
+    earnBankUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -134,6 +155,12 @@ UserSchema.index(
     },
   }
 );
+
+// Dev HMR keeps the first compiled schema; drop it when fields were added.
+const existingModel = mongoose.models.User as Model<IUser> | undefined;
+if (existingModel && !existingModel.schema.path("earnBankSheba")) {
+  mongoose.deleteModel("User");
+}
 
 const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>("User", UserSchema);

@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  TriangleAlert,
   Banknote,
   Check,
+  Download,
   Loader2,
   RefreshCw,
   X,
 } from "lucide-react";
+import { AdminLedgerAuditCard } from "@/components/admin-ledger-audit-card";
+import { CopyButton } from "@/components/copy-button";
 import { SectionBadge } from "@/components/section-badge";
 import {
   ReviewSlaBadge,
@@ -16,12 +20,16 @@ import {
 } from "@/components/review-sla";
 import { brandCta, brandGlassCard, formFocus } from "@/lib/brand";
 import type { EarnPayoutStatus } from "@/lib/earn";
+import { formatSheba } from "@/lib/sheba";
 import { cn, formatDate, formatToman } from "@/lib/utils";
 
 interface AdminPayoutRow {
   id: string;
   amount: number;
   bankNote: string;
+  bankSheba: string | null;
+  bankAccountHolder: string | null;
+  bankName: string | null;
   status: EarnPayoutStatus;
   adminNote: string | null;
   createdAt: string;
@@ -31,6 +39,15 @@ interface AdminPayoutRow {
     lastName: string;
     mobileNumber: string;
   } | null;
+}
+
+/** Names compare equal ignoring spacing, ZWNJ and Arabic/Persian letter variants. */
+function nameKey(value: string) {
+  return value
+    .replace(/[\u200c\s]+/g, "")
+    .replace(/ي/g, "ی")
+    .replace(/ك/g, "ک")
+    .toLowerCase();
 }
 
 const statusLabel: Record<string, string> = {
@@ -110,14 +127,24 @@ export function AdminPayoutsPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionBadge icon={Banknote}>واریز دستی</SectionBadge>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/55 hover:bg-white/5 hover:text-white"
-        >
-          <RefreshCw className="size-3.5" />
-          نوسازی
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={`/api/admin/earn/payouts/export?status=${status}`}
+            download
+            className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 px-3 py-1.5 text-xs text-brand hover:bg-brand/10"
+          >
+            <Download className="size-3.5" />
+            خروجی CSV
+          </a>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/55 hover:bg-white/5 hover:text-white"
+          >
+            <RefreshCw className="size-3.5" />
+            نوسازی
+          </button>
+        </div>
       </div>
 
       <p className="text-sm text-white/50">
@@ -206,12 +233,49 @@ export function AdminPayoutsPanel() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-dashed border-brand/30 bg-black/20 px-3 py-2">
-                <div className="text-[11px] text-white/40">شبا یا کارت</div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-white" dir="ltr">
-                  {row.bankNote}
-                </p>
-              </div>
+              {row.bankSheba ? (
+                <div className="space-y-1.5 rounded-xl border border-dashed border-brand/30 bg-black/20 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] text-white/40">
+                      شبا{row.bankName ? ` · ${row.bankName}` : ""}
+                    </div>
+                    <CopyButton text={row.bankSheba} />
+                  </div>
+                  <p className="text-sm tracking-wide text-white" dir="ltr">
+                    {formatSheba(row.bankSheba)}
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm text-white/80">
+                      صاحب حساب: {row.bankAccountHolder}
+                    </p>
+                    {row.bankAccountHolder && (
+                      <CopyButton text={row.bankAccountHolder} />
+                    )}
+                  </div>
+                  {row.user &&
+                    row.bankAccountHolder &&
+                    nameKey(row.bankAccountHolder) !==
+                      nameKey(`${row.user.firstName}${row.user.lastName}`) && (
+                      <p className="flex items-center gap-1.5 text-[11px] text-amber-200">
+                        <TriangleAlert className="size-3.5 shrink-0" />
+                        نام صاحب حساب با نام ثبت‌نام ({row.user.firstName}{" "}
+                        {row.user.lastName}) فرق دارد.
+                      </p>
+                    )}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/20 bg-black/20 px-3 py-2">
+                  <div className="text-[11px] text-white/40">
+                    حساب (درخواست قدیمی، متن آزاد)
+                  </div>
+                  <p
+                    className="mt-1 whitespace-pre-wrap text-sm text-white"
+                    dir="ltr"
+                  >
+                    {row.bankNote || "-"}
+                  </p>
+                </div>
+              )}
 
               {row.adminNote && row.status !== "pending" && (
                 <p className="text-sm text-white/55">{row.adminNote}</p>
@@ -260,6 +324,8 @@ export function AdminPayoutsPanel() {
           ))}
         </div>
       )}
+
+      <AdminLedgerAuditCard />
     </div>
   );
 }

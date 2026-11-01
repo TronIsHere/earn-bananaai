@@ -18,6 +18,7 @@ import {
 import {
   computeViewBonusToman,
   matchViewBonusTier,
+  MIN_PAID_VIEWS,
   sumReachedViewBonusToman,
   viewBonusRemainingCap,
 } from "@/lib/earn";
@@ -33,7 +34,9 @@ interface Day7Submission {
   basePayoutToman: number;
   bonusToman: number;
   day7Views: number | null;
-  basePaidAt: string | null;
+  day7ClaimedViews: number | null;
+  day7ProofScreenshotUrl: string | null;
+  day7ProofSubmittedAt: string | null;
   createdAt: string;
   user: {
     id: string;
@@ -47,14 +50,16 @@ interface Day7Submission {
     title: string;
     viewBonusTiers: ViewBonusTier[];
     maxPayoutPerVideoToman: number;
-    basePayoutToman: number;
     spentBudgetToman: number;
     totalBudgetToman: number;
   } | null;
 }
 
+type InsightsFilter = "all" | "sent" | "missing";
+
 export function AdminDay7Panel() {
   const [submissions, setSubmissions] = useState<Day7Submission[]>([]);
+  const [filter, setFilter] = useState<InsightsFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +90,15 @@ export function AdminDay7Panel() {
     void load();
   }, [load]);
 
+  const sentCount = submissions.filter((s) => s.day7ProofSubmittedAt).length;
+  const visible = submissions.filter((s) =>
+    filter === "all"
+      ? true
+      : filter === "sent"
+        ? Boolean(s.day7ProofSubmittedAt)
+        : !s.day7ProofSubmittedAt
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -92,10 +106,11 @@ export function AdminDay7Panel() {
           <SectionBadge icon={Eye}>پاداش بازدید</SectionBadge>
           <h2 className="mt-2 text-xl font-bold text-white">بازدید روز هفتم</h2>
           <p className="mt-1 max-w-2xl text-sm text-white/55">
-            تعداد بازدید را وارد کنید. سیستم پاداش همه سطح‌های رسیده‌شده را جمع
-            می‌کند و تا سقف هر ویدیو منهای پایه محدود می‌کند، سپس به کیف پول
-            واریز و ارسال را نهایی می‌کند. اگر تأیید پایه را اشتباه زده‌اید،
-            قبل از ثبت بازدید می‌توانید تأیید را برگردانید.
+            تعداد بازدید را وارد کنید. زیر {formatToman(MIN_PAID_VIEWS)} بازدید
+            پرداختی نیست. بالاتر از آن سیستم پاداش همه سطح‌های رسیده‌شده را جمع
+            می‌کند و تا سقف هر ویدیو محدود می‌کند، سپس به کیف پول واریز و ارسال
+            را نهایی می‌کند. اگر تأیید را اشتباه زده‌اید، قبل از ثبت بازدید
+            می‌توانید آن را برگردانید.
           </p>
         </div>
         <button
@@ -107,6 +122,35 @@ export function AdminDay7Panel() {
           نوسازی
         </button>
       </div>
+
+      {submissions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              ["all", `همه (${formatToman(submissions.length)})`],
+              ["sent", `اینسایت رسیده (${formatToman(sentCount)})`],
+              [
+                "missing",
+                `بدون اینسایت (${formatToman(submissions.length - sentCount)})`,
+              ],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFilter(id)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs transition-colors",
+                filter === id
+                  ? "bg-brand/15 text-brand"
+                  : "bg-white/5 text-white/55 hover:bg-white/8"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex min-h-[30vh] items-center justify-center">
@@ -120,9 +164,13 @@ export function AdminDay7Panel() {
         <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-sm text-white/45">
           ارسالی در انتظار ثبت بازدید روز ۷ نیست.
         </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/15 px-6 py-12 text-center text-sm text-white/45">
+          موردی با این فیلتر نیست.
+        </div>
       ) : (
         <div className="space-y-3">
-          {submissions.map((sub) => (
+          {visible.map((sub) => (
             <Day7Card
               key={sub.id}
               submission={sub}
@@ -153,7 +201,8 @@ function Day7Card({
 
   const campaign = submission.campaign;
   const tiers = campaign?.viewBonusTiers ?? [];
-  const base = submission.basePayoutToman || campaign?.basePayoutToman || 0;
+  // Only legacy submissions carry a base credited on approval.
+  const base = submission.basePayoutToman || 0;
   const maxPayout = campaign?.maxPayoutPerVideoToman ?? base;
   const remainingCap = viewBonusRemainingCap(maxPayout, base);
 
@@ -173,12 +222,12 @@ function Day7Card({
     views == null ? 0 : sumReachedViewBonusToman(views, tiers);
   const capped = previewBonus != null && rawBonus > remainingCap;
 
-  const daysSinceBase = submission.basePaidAt
-    ? Math.floor(
-        (Date.now() - new Date(submission.basePaidAt).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
-    : null;
+  const claimed = submission.day7ClaimedViews;
+  const hasInsights = Boolean(submission.day7ProofSubmittedAt);
+  const claimedGap =
+    views != null && claimed != null && views !== claimed
+      ? Math.abs(views - claimed) / Math.max(claimed, 1)
+      : null;
 
   const submit = async () => {
     if (views == null) {
@@ -232,7 +281,11 @@ function Day7Card({
         setError(data.error || "برگشت تأیید ناموفق بود");
         return;
       }
-      setDone("تأیید لغو شد. پاداش پایه از کیف پول برگشت و ارسال به صف بررسی رفت.");
+      setDone(
+        base > 0
+          ? "تأیید لغو شد. پاداش پایه از کیف پول برگشت و ارسال به صف بررسی رفت."
+          : "تأیید لغو شد و ارسال به صف بررسی رفت."
+      );
       window.setTimeout(() => onFinalized(submission.id), 1200);
     } catch {
       setError("برگشت تأیید ناموفق بود");
@@ -260,13 +313,10 @@ function Day7Card({
           </p>
           <div className="mt-1 text-xs text-white/40">
             ارسال {formatDate(submission.createdAt)}
-            {daysSinceBase != null && (
-              <> · {formatToman(daysSinceBase)} روز از پاداش پایه</>
-            )}
           </div>
         </div>
         <div className="text-left text-xs text-white/45">
-          پایه {formatToman(base)} تومان
+          {base > 0 && <div>پایه قبلی {formatToman(base)} تومان</div>}
           <div>
             سقف باقیمانده {formatToman(remainingCap)} تومان
           </div>
@@ -301,6 +351,63 @@ function Day7Card({
           </a>
         )}
       </div>
+
+      {hasInsights ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/[0.06] p-3">
+          <div className="space-y-1">
+            <div className="text-[11px] text-white/45">
+              اینسایت سازنده · {formatDate(submission.day7ProofSubmittedAt)}
+            </div>
+            <div className="earn-money text-lg text-white">
+              {formatToman(claimed ?? 0)}
+              <span className="mr-1 text-xs font-normal text-white/45">
+                بازدید اعلامی
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {submission.day7ProofScreenshotUrl && (
+                <a
+                  href={submission.day7ProofScreenshotUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-brand hover:text-brand-soft"
+                >
+                  اسکرین‌شات اینسایت
+                  <ExternalLink className="size-3.5" />
+                </a>
+              )}
+              {claimed != null && !done && (
+                <button
+                  type="button"
+                  onClick={() => setViewsInput(String(claimed))}
+                  className="rounded-full border border-brand/30 px-2.5 py-1 text-[11px] text-brand hover:bg-brand/10"
+                >
+                  استفاده از این عدد
+                </button>
+              )}
+            </div>
+          </div>
+          {submission.day7ProofScreenshotUrl && (
+            <a
+              href={submission.day7ProofScreenshotUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={submission.day7ProofScreenshotUrl}
+                alt="اسکرین‌شات اینسایت"
+                className="max-h-28 rounded-lg border border-white/10 object-contain"
+              />
+            </a>
+          )}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-white/40">
+          سازنده هنوز اینسایت روز ۷ را نفرستاده است.
+        </p>
+      )}
 
       {tiers.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -362,14 +469,26 @@ function Day7Card({
           {capped ? " (سقف اعمال شد)" : ""}
         </p>
       )}
+      {claimedGap != null && !done && (
+        <p
+          className={cn(
+            "mt-1 text-xs",
+            claimedGap > 0.1 ? "text-amber-200" : "text-white/45"
+          )}
+        >
+          با عدد اعلامی سازنده ({formatToman(claimed ?? 0)}) فرق دارد. قبل از
+          ثبت، اسکرین‌شات را دوباره ببین.
+        </p>
+      )}
 
       {!done && (
         <div className="mt-3 space-y-2">
           {confirmRevoke ? (
             <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 px-3 py-3">
               <p className="text-sm text-amber-100/90">
-                پاداش پایه از کیف پول کاربر کم می‌شود و ارسال به صف بررسی
-                برمی‌گردد.
+                {base > 0
+                  ? "پاداش پایه از کیف پول کاربر کم می‌شود و ارسال به صف بررسی برمی‌گردد."
+                  : "ارسال به صف بررسی برمی‌گردد."}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -406,7 +525,7 @@ function Day7Card({
               className="inline-flex items-center gap-1.5 rounded-2xl border border-white/10 px-3 py-2 text-xs text-white/55 hover:border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-100 disabled:opacity-50"
             >
               <RotateCcw className="size-3.5" />
-              لغو تأیید و برگشت پاداش پایه
+              لغو تأیید
             </button>
           )}
         </div>

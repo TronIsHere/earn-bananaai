@@ -12,6 +12,10 @@ import {
   Wallet,
   XCircle,
 } from "lucide-react";
+import {
+  BankDetailsForm,
+  BankDetailsSummary,
+} from "@/components/bank-details-form";
 import { Money } from "@/components/money";
 import { ProgressBar } from "@/components/progress-bar";
 import { SectionBadge } from "@/components/section-badge";
@@ -34,6 +38,9 @@ interface PayoutRow {
   id: string;
   amount: number;
   bankNote: string;
+  bankSheba: string | null;
+  bankAccountHolder: string | null;
+  bankName: string | null;
   status: "pending" | "paid" | "rejected";
   adminNote: string | null;
   paidAt: string | null;
@@ -64,7 +71,7 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const [bankNote, setBankNote] = useState("");
+  const [editingBank, setEditingBank] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -101,6 +108,7 @@ export default function BillingPage() {
     [payouts]
   );
   const available = state.wallet.available;
+  const hasBank = Boolean(state.profile.bankSheba);
   const canPayout = available >= MIN_PAYOUT_TOMAN && !pending;
   const toMin = Math.max(0, MIN_PAYOUT_TOMAN - available);
   const pct = Math.min(100, (available / MIN_PAYOUT_TOMAN) * 100);
@@ -109,6 +117,7 @@ export default function BillingPage() {
     setError(null);
     setSuccess(null);
     setAmount(String(available));
+    setEditingBank(false);
     setFormOpen(true);
   };
 
@@ -120,10 +129,7 @@ export default function BillingPage() {
       const res = await fetch("/api/user/earn/payout-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: Number(amount),
-          bankNote,
-        }),
+        body: JSON.stringify({ amount: Number(amount) }),
       });
       const data = (await res.json()) as {
         error?: string;
@@ -143,7 +149,6 @@ export default function BillingPage() {
       }
       setSuccess(data.message || "درخواست واریز ثبت شد.");
       setFormOpen(false);
-      setBankNote("");
     } catch {
       setError("ثبت درخواست ناموفق بود");
     } finally {
@@ -165,9 +170,13 @@ export default function BillingPage() {
         <SectionBadge icon={Wallet}>کیف پول</SectionBadge>
         <h1 className={cn("mt-3", sectionTitle)}>کیف پول و واریز</h1>
         <p className="mt-1 text-sm text-white/55">
-          موجودی نقدی‌ات و درخواست واریز به شبا یا کارت.{" "}
+          موجودی نقدی‌ات و درخواست واریز به شبا.{" "}
           <Link href="/help/bardasht" className="text-brand hover:text-brand-soft">
             راهنمای برداشت
+          </Link>
+          {" · "}
+          <Link href="/history" className="text-brand hover:text-brand-soft">
+            تاریخچه درآمد
           </Link>
         </p>
       </header>
@@ -203,7 +212,7 @@ export default function BillingPage() {
             </div>
           ) : (
             <p className="text-sm text-cash">
-              به حداقل برداشت رسیدی. شبا یا کارتت را ثبت کن تا واریز کنیم.
+              به حداقل برداشت رسیدی. شبایت را ثبت کن تا واریز کنیم.
             </p>
           )}
 
@@ -246,8 +255,8 @@ export default function BillingPage() {
             <div>
               <h2 className="text-base font-bold text-white">اطلاعات واریز</h2>
               <p className="mt-1 text-sm text-white/50">
-                مبلغ و شماره شبا یا کارت را وارد کن. بعد از ثبت، زمان دقیق نتیجه
-                را می‌بینی.
+                مبلغ را وارد کن. پول به حساب بانکی ثبت‌شده واریز می‌شود و بعد از
+                ثبت، زمان دقیق نتیجه را می‌بینی.
               </p>
             </div>
           </div>
@@ -266,22 +275,32 @@ export default function BillingPage() {
               </span>
             </div>
           </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-white/55">
-              شبا یا شماره کارت و نام صاحب حساب
-            </span>
-            <textarea
-              value={bankNote}
-              onChange={(e) => setBankNote(e.target.value)}
-              placeholder="مثال: IR120170000000123456789012 به نام نام و نام خانوادگی"
-              className={cn(formInput, formFocus, "min-h-24")}
-            />
-          </label>
+
+          <div className="space-y-2">
+            <span className="text-xs font-semibold text-white/55">حساب مقصد</span>
+            {hasBank && !editingBank ? (
+              <BankDetailsSummary onEdit={() => setEditingBank(true)} />
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                {!hasBank && (
+                  <p className="mb-3 text-xs text-white/50">
+                    برای اولین واریز، شبای حسابت را ثبت کن. دفعه بعد دیگر لازم
+                    نیست.
+                  </p>
+                )}
+                <BankDetailsForm
+                  onSaved={() => setEditingBank(false)}
+                  onCancel={hasBank ? () => setEditingBank(false) : undefined}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void submit()}
-              disabled={submitting}
+              disabled={submitting || !hasBank || editingBank}
               className={cn(brandCta, "h-12 px-6 text-sm")}
             >
               {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -374,7 +393,9 @@ export default function BillingPage() {
                     </div>
                     <div>
                       <div className="text-sm font-semibold text-white">
-                        واریز به شبا / کارت
+                        {row.bankSheba
+                          ? `واریز به ${row.bankName ?? "حساب بانکی"} · ${row.bankSheba.slice(-4)}`
+                          : "واریز به حساب بانکی"}
                       </div>
                       <div className="mt-0.5 text-xs text-white/40">
                         {formatDate(row.createdAt)}

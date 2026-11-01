@@ -86,6 +86,7 @@ export async function PATCH(
       const result = await enterDay7ViewBonus({
         submissionId: idParsed.data,
         views: day7.data.views,
+        reviewerId: access.session.user.id,
       });
       return NextResponse.json(result);
     } catch (error) {

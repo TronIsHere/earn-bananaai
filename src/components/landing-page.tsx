@@ -30,9 +30,9 @@ import {
   sectionTitle,
 } from "@/lib/brand";
 import {
-  DEFAULT_BASE_PAYOUT_TOMAN,
   DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN,
   DEFAULT_VIEW_BONUS_TIERS,
+  MIN_PAID_VIEWS,
   MIN_PAYOUT_TOMAN,
   REVIEW_SLA_HOURS,
 } from "@/lib/earn";
@@ -41,7 +41,6 @@ import { cn, formatToman, formatTomanCompact } from "@/lib/utils";
 export type LandingCampaignTeaser = {
   id: string;
   title: string;
-  basePayoutToman: number;
   maxPayoutPerVideoToman: number;
   trending?: boolean;
 };
@@ -50,7 +49,7 @@ const trustPoints = [
   {
     icon: Banknote,
     title: "پرداخت شفاف",
-    text: "قبل از شروع دقیقاً می‌دانی هر ریل چقدر می‌ارزد. پایه ثابت است و پاداش بازدید پله‌ای اضافه می‌شود.",
+    text: "قبل از شروع دقیقاً می‌دانی هر ریل چقدر می‌ارزد. پرداخت از ${formatToman(MIN_PAID_VIEWS)} بازدید شروع می‌شود و با هر پله بازدید بیشتر می‌شود.",
   },
   {
     icon: Clock3,
@@ -59,7 +58,7 @@ const trustPoints = [
   },
   {
     icon: Landmark,
-    title: "واریز به شبا یا کارت",
+    title: "واریز به شبا",
     text: `بعد از رسیدن به ${formatTomanCompact(MIN_PAYOUT_TOMAN)} تومان، درخواست واریز بده و پول را مستقیم بگیر.`,
   },
   {
@@ -76,11 +75,11 @@ const faqs = [
   },
   {
     q: "چقدر و کی پول می‌گیرم؟",
-    a: `بعد از تأیید پست (حداکثر ${formatToman(REVIEW_SLA_HOURS)} ساعت) پاداش پایه به کیف پولت می‌آید. روز هفتم، بازدید ریل ثبت می‌شود و اگر به پله‌های پاداش برسد، مبلغ اضافه هم واریز می‌شود.`,
+    a: `پست را حداکثر ${formatToman(REVIEW_SLA_HOURS)} ساعته بررسی می‌کنیم. روز هفتم، بازدید ریل ثبت می‌شود و اگر حداقل به ${formatToman(MIN_PAID_VIEWS)} بازدید رسیده باشد، پاداش هر پله‌ای که رد کرده به کیف پولت واریز می‌شود. زیر این عدد پرداختی نیست.`,
   },
   {
     q: "چطور پول را نقد کنم؟",
-    a: `وقتی موجودی کیف پولت به ${formatTomanCompact(MIN_PAYOUT_TOMAN)} تومان برسد، شبا یا شماره کارتت را ثبت می‌کنی و دستی برایت واریز می‌کنیم.`,
+    a: `وقتی موجودی کیف پولت به ${formatTomanCompact(MIN_PAYOUT_TOMAN)} تومان برسد، شبایت را ثبت می‌کنی و دستی برایت واریز می‌کنیم.`,
   },
   {
     q: "چند تا ریل می‌توانم بفرستم؟",
@@ -123,15 +122,15 @@ export function LandingPage({
             className={cn("earn-rise max-w-xl", sectionLead)}
             style={{ ["--delay" as string]: "160ms" }}
           >
-            برای هر ریل تأییدشده{" "}
+            هر ریلی که حداقل{" "}
             <strong className="text-white">
-              {formatTomanCompact(DEFAULT_BASE_PAYOUT_TOMAN)} تومان
+              {formatToman(MIN_PAID_VIEWS)} بازدید
             </strong>{" "}
-            پاداش پایه می‌گیری و با بازدید بیشتر تا{" "}
+            بگیرد پول دارد و با بازدید بیشتر تا{" "}
             <strong className="text-brand">
               {formatTomanCompact(DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN)} تومان
             </strong>{" "}
-            برای هر ویدیو. بدون هزینه، بدون واسطه، واریز مستقیم به کارتت.
+            برای هر ویدیو. بدون هزینه، بدون واسطه، واریز مستقیم به حسابت.
           </p>
 
           <div
@@ -154,7 +153,7 @@ export function LandingPage({
           >
             {[
               `بررسی ${formatToman(REVIEW_SLA_HOURS)} ساعته`,
-              "واریز به شبا یا کارت",
+              "واریز به شبا",
               "عضویت رایگان",
             ].map((item) => (
               <li key={item} className="inline-flex items-center gap-1.5">
@@ -188,7 +187,6 @@ export function LandingPage({
               </div>
               <EarningsCalculator
                 variant="hero"
-                basePayoutToman={DEFAULT_BASE_PAYOUT_TOMAN}
                 viewBonusTiers={tiers}
                 maxPayoutPerVideoToman={DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN}
               />
@@ -248,14 +246,13 @@ export function LandingPage({
               بازدید بیشتر، پول بیشتر
             </span>
             <h2 className="text-2xl font-black leading-tight text-brand-ink sm:text-4xl">
-              هر ریل از{" "}
-              {formatTomanCompact(DEFAULT_BASE_PAYOUT_TOMAN)} تا{" "}
+              هر ریل تا{" "}
               {formatTomanCompact(DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN)} تومان
             </h2>
             <p className="max-w-md text-sm leading-relaxed text-brand-ink/75 sm:text-base">
-              پاداش پایه با تأیید پست واریز می‌شود. روز هفتم، بازدید ریل را ثبت
-              می‌کنیم و هر پله‌ای که رد کرده باشی، پاداشش را روی هم می‌گیری تا سقف
-              هر ویدیو.
+              پرداخت از {formatToman(MIN_PAID_VIEWS)} بازدید شروع می‌شود. روز
+              هفتم، بازدید ریل را ثبت می‌کنیم و هر پله‌ای که رد کرده باشی،
+              پاداشش را روی هم می‌گیری تا سقف هر ویدیو.
             </p>
             <div className="flex flex-wrap gap-3 pt-1">
               <a href="#login" className={cn(brandCtaInk, "px-5 py-2.5 text-sm")}>
@@ -276,7 +273,6 @@ export function LandingPage({
               <span>مبلغ‌ها مجموع دریافتی است</span>
             </div>
             <PayoutLadder
-              basePayoutToman={DEFAULT_BASE_PAYOUT_TOMAN}
               viewBonusTiers={tiers}
               maxPayoutPerVideoToman={DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN}
             />
@@ -320,9 +316,6 @@ export function LandingPage({
                   <div>
                     <div className="text-[11px] text-white/45">درآمد هر ریل</div>
                     <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
-                      <span className="earn-money text-2xl text-white">
-                        {formatTomanCompact(campaign.basePayoutToman)}
-                      </span>
                       <span className="text-base font-medium text-white/35">تا</span>
                       <span className="earn-money text-2xl text-brand">
                         {formatTomanCompact(campaign.maxPayoutPerVideoToman)}

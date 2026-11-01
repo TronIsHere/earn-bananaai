@@ -44,10 +44,22 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "کاربر پیدا نشد" }, { status: 404 });
   }
 
-  const { firstName, lastName } = parsed.data;
+  const { firstName, lastName, bankSheba, bankAccountHolder } = parsed.data;
 
   if (firstName) user.firstName = firstName.trim();
   if (lastName) user.lastName = lastName.trim();
+  if (bankSheba !== undefined && bankAccountHolder !== undefined) {
+    const nextSheba = bankSheba || null;
+    const nextHolder = bankAccountHolder || null;
+    if (
+      nextSheba !== user.earnBankSheba ||
+      nextHolder !== user.earnBankAccountHolder
+    ) {
+      user.earnBankSheba = nextSheba;
+      user.earnBankAccountHolder = nextHolder;
+      user.earnBankUpdatedAt = new Date();
+    }
+  }
 
   try {
     await user.save();

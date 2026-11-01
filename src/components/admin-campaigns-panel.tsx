@@ -7,18 +7,23 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { PlatformBadge } from "@/components/campaign-card";
 import { SectionBadge } from "@/components/section-badge";
 import { brandCta, brandCtaGhost, brandGlassCard, formFocus } from "@/lib/brand";
 import {
-  DEFAULT_BASE_PAYOUT_TOMAN,
   DEFAULT_CAMPAIGN_BUDGET_TOMAN,
   DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN,
   DEFAULT_VIEW_BONUS_TIERS,
+  MIN_PAID_VIEWS,
   remainingBudgetToman,
 } from "@/lib/earn";
-import type { Campaign, CampaignStatus } from "@/lib/types";
+import {
+  MAX_PROMPT_LENGTH,
+  MAX_PROMPT_PACK_ITEMS,
+  MAX_PROMPT_TITLE_LENGTH,
+} from "@/lib/prompt-pack";
+import type { Campaign, CampaignStatus, PromptPackItem } from "@/lib/types";
 import {
   cn,
   formatDate,
@@ -38,7 +43,8 @@ const emptyForm = {
   requirementsChecklist: "",
   requiredHashtags: "",
   requiredMentions: "",
-  basePayoutToman: formatToman(DEFAULT_BASE_PAYOUT_TOMAN),
+  toolUrl: "",
+  promptPack: [] as PromptPackItem[],
   maxPayoutPerVideoToman: formatToman(DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN),
   maxSubmissionsPerUser: formatToman(3),
   totalBudgetToman: formatToman(DEFAULT_CAMPAIGN_BUDGET_TOMAN),
@@ -69,7 +75,8 @@ function campaignToForm(campaign: Campaign): typeof emptyForm {
     requirementsChecklist: campaign.requirementsChecklist.join("\n"),
     requiredHashtags: campaign.requiredHashtags.join(", "),
     requiredMentions: campaign.requiredMentions.join(", "),
-    basePayoutToman: formatToman(campaign.basePayoutToman),
+    toolUrl: campaign.toolUrl ?? "",
+    promptPack: (campaign.promptPack ?? []).map((item) => ({ ...item })),
     maxPayoutPerVideoToman: formatToman(campaign.maxPayoutPerVideoToman),
     maxSubmissionsPerUser: formatToman(campaign.maxSubmissionsPerUser),
     totalBudgetToman: formatToman(campaign.totalBudgetToman),
@@ -120,7 +127,10 @@ function formToPayload(form: typeof emptyForm) {
       .split(/[\n,]+/)
       .map((s) => s.trim().replace(/^@/, ""))
       .filter(Boolean),
-    basePayoutToman: parseGroupedNumber(form.basePayoutToman) || 0,
+    toolUrl: form.toolUrl.trim(),
+    promptPack: form.promptPack
+      .map((item) => ({ title: item.title.trim(), prompt: item.prompt.trim() }))
+      .filter((item) => item.title || item.prompt),
     viewBonusTiers: tiers,
     maxPayoutPerVideoToman,
     maxSubmissionsPerUser: parseGroupedNumber(form.maxSubmissionsPerUser) || 3,
@@ -132,7 +142,6 @@ function formToPayload(form: typeof emptyForm) {
 }
 
 function parsedTierPayouts(form: typeof emptyForm) {
-  const base = parseGroupedNumber(form.basePayoutToman) || 0;
   const cap = parseGroupedNumber(form.maxPayoutPerVideoToman) || 0;
   let runningBonus = 0;
   const rows = form.tiers.map((row) => {
@@ -145,15 +154,13 @@ function parsedTierPayouts(form: typeof emptyForm) {
       views: Number.isFinite(views) && views > 0 ? views : 0,
       bonus: hasBonus ? bonus : 0,
       bonusSum: hasBonus ? runningBonus : null,
-      total: hasBonus ? base + runningBonus : null,
+      total: hasBonus ? runningBonus : null,
     };
   });
   return {
-    base,
     cap,
     rows,
-    bonusSum: runningBonus,
-    total: runningBonus > 0 || base > 0 ? base + runningBonus : null,
+    total: runningBonus > 0 ? runningBonus : null,
   };
 }
 
@@ -348,7 +355,7 @@ export function AdminCampaignsPanel() {
             <p className="text-xs leading-relaxed text-white/40">
               {editingId
                 ? "تغییرات روی همین کمپین ذخیره می‌شود. بودجه خرج‌شده عوض نمی‌شود."
-                : "اقتصاد پیشنهادی از قبل پر شده: پایه ۴۰۰ هزار، سقف ۲ میلیون، بودجه ۱۵ میلیون، سطوح ۱ک / ۵ک / ۲۰ک / ۵۰ک / ۱۰۰ک بازدید. پاداش هر سطح را می‌توانید دستی عوض کنید."}
+                : `پاداش پایه نداریم: هیچ ریلی زیر ${formatToman(MIN_PAID_VIEWS)} بازدید پولی نمی‌گیرد. سطوح پیشنهادی ۱ک / ۵ک / ۲۰ک / ۵۰ک / ۱۰۰ک بازدید از قبل پر شده و پاداش هر سطح را می‌توانید دستی عوض کنید.`}
             </p>
           </div>
           <Field label="عنوان کمپین">
@@ -386,17 +393,9 @@ export function AdminCampaignsPanel() {
                 <option value="ended">پایان‌یافته</option>
               </select>
             </Field>
-            <Field label="پاداش پایه" hint="۳۰۰٬۰۰۰–۵۰۰٬۰۰۰ تومان">
-              <NumberInput
-                value={form.basePayoutToman}
-                onChange={(basePayoutToman) =>
-                  setForm((f) => ({ ...f, basePayoutToman }))
-                }
-              />
-            </Field>
             <Field
               label="سقف هر ویدیو"
-              hint="حداکثر پایه + پاداش بازدید یک ویدیو"
+              hint="حداکثر پاداش بازدید یک ویدیو"
             >
               <NumberInput
                 value={form.maxPayoutPerVideoToman}
@@ -565,6 +564,22 @@ export function AdminCampaignsPanel() {
               className={cn(fieldClass, formFocus)}
             />
           </Field>
+          <Field
+            label="لینک ابزار بنانا"
+            hint="اختیاری · با https شروع شود · {prompt} جای متن پرامپت می‌نشیند"
+          >
+            <input
+              value={form.toolUrl}
+              onChange={(e) => setForm((f) => ({ ...f, toolUrl: e.target.value }))}
+              placeholder="https://.../create?prompt={prompt}"
+              dir="ltr"
+              className={cn(fieldClass, formFocus, "text-left")}
+            />
+          </Field>
+          <PromptPackEditor
+            rows={form.promptPack}
+            onChange={(promptPack) => setForm((f) => ({ ...f, promptPack }))}
+          />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -629,7 +644,7 @@ export function AdminCampaignsPanel() {
                     {campaign.brief}
                   </p>
                   <div className="mt-2 text-xs text-white/40">
-                    پایه {formatToman(campaign.basePayoutToman)} · باقی‌مانده{" "}
+                    سقف هر ویدیو {formatToman(campaign.maxPayoutPerVideoToman)} · باقی‌مانده{" "}
                     {formatToman(
                       remainingBudgetToman(
                         campaign.spentBudgetToman,
@@ -690,8 +705,74 @@ export function AdminCampaignsPanel() {
   );
 }
 
+function PromptPackEditor({
+  rows,
+  onChange,
+}: {
+  rows: PromptPackItem[];
+  onChange: (rows: PromptPackItem[]) => void;
+}) {
+  const update = (index: number, patch: Partial<PromptPackItem>) =>
+    onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+
+  return (
+    <fieldset className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <legend className="text-xs text-white/50">پرامپت‌های آماده</legend>
+        <span className="text-[11px] text-white/30">
+          اختیاری · سازنده‌ها کپی یا مستقیم در بنانا باز می‌کنند · حداکثر{" "}
+          {formatToman(MAX_PROMPT_PACK_ITEMS)} مورد
+        </span>
+      </div>
+      {rows.map((row, index) => (
+        <div
+          key={index}
+          className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-3"
+        >
+          <div className="flex items-center gap-2">
+            <input
+              value={row.title}
+              onChange={(e) => update(index, { title: e.target.value })}
+              maxLength={MAX_PROMPT_TITLE_LENGTH}
+              placeholder="عنوان، مثلاً ریل معرفی محصول"
+              aria-label="عنوان پرامپت"
+              className={cn(fieldClass, formFocus)}
+            />
+            <button
+              type="button"
+              onClick={() => onChange(rows.filter((_, i) => i !== index))}
+              aria-label="حذف پرامپت"
+              className="shrink-0 rounded-xl border border-white/10 p-2.5 text-white/50 transition-colors hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-200"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+          <textarea
+            value={row.prompt}
+            onChange={(e) => update(index, { prompt: e.target.value })}
+            maxLength={MAX_PROMPT_LENGTH}
+            placeholder="متن پرامپت"
+            aria-label="متن پرامپت"
+            className={cn(fieldClass, formFocus, "min-h-24")}
+          />
+        </div>
+      ))}
+      {rows.length < MAX_PROMPT_PACK_ITEMS && (
+        <button
+          type="button"
+          onClick={() => onChange([...rows, { title: "", prompt: "" }])}
+          className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/65 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <Plus className="size-3.5" />
+          افزودن پرامپت
+        </button>
+      )}
+    </fieldset>
+  );
+}
+
 function VideoCapStatus({ form }: { form: typeof emptyForm }) {
-  const { cap, total, bonusSum, base } = parsedTierPayouts(form);
+  const { cap, total } = parsedTierPayouts(form);
   if (total == null || cap <= 0) return null;
   const relation = capRelationLabel(total, cap);
   const toneClass =
@@ -702,10 +783,10 @@ function VideoCapStatus({ form }: { form: typeof emptyForm }) {
         : "border-rose-500/30 bg-rose-500/10 text-rose-300";
   const message =
     relation.tone === "equal"
-      ? `جمع پایه (${formatToman(base)}) و پاداش سطوح (${formatToman(bonusSum)}) برابر سقف هر ویدیو است.`
+      ? `جمع پاداش سطوح (${formatToman(total)}) برابر سقف هر ویدیو است.`
       : relation.tone === "under"
-        ? `جمع پایه و پاداش سطوح ${formatToman(total)} تومان است؛ ${formatToman(relation.delta)} تومان کمتر از سقف هر ویدیو.`
-        : `جمع پایه و پاداش سطوح ${formatToman(total)} تومان است؛ ${formatToman(relation.delta)} تومان بیشتر از سقف هر ویدیو.`;
+        ? `جمع پاداش سطوح ${formatToman(total)} تومان است؛ ${formatToman(relation.delta)} تومان کمتر از سقف هر ویدیو.`
+        : `جمع پاداش سطوح ${formatToman(total)} تومان است؛ ${formatToman(relation.delta)} تومان بیشتر از سقف هر ویدیو.`;
 
   return (
     <p className={cn("rounded-xl border px-3 py-2 text-xs leading-relaxed", toneClass)}>

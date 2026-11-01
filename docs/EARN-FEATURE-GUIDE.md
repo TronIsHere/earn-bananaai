@@ -21,10 +21,10 @@ flowchart LR
     browse --> post[Create with AI tools and post on Instagram]
     post --> submit[Submit post URL plus screenshot]
     submit --> review[Admin review]
-    review -->|approved| base[Base payout to Toman wallet]
+    review -->|approved| day7[Admin enters day-7 view count]
     review -->|rejected| resubmit[Reject with reason]
-    base --> day7[Admin enters day-7 view count]
-    day7 --> bonus[Tiered view bonus to wallet]
+    day7 -->|1,000+ views| bonus[Tiered view bonus to wallet]
+    day7 -->|under 1,000| nothing[Finalized, no payout]
     bonus --> withdraw[Manual payout request]
 ```
 
@@ -37,14 +37,13 @@ flowchart LR
    - Admin opens profile, checks bio, approves/rejects.
 2. **Browse campaigns**
    - Only `status=active` and not past `deadline`.
-   - Show brief, checklist, hashtags/mentions, media kit, base payout, view-bonus tiers, per-video cap.
+   - Show brief, checklist, hashtags/mentions, media kit, view-bonus tiers, per-video cap. No base payout.
 3. **Submit**
    - Instagram post/reel URL + proof screenshot upload.
    - Requires verified handle; enforce per-campaign submission limit; reject duplicate post URLs.
 4. **Get paid**
-   - On approve: credit **base** payout to wallet.
-   - Status becomes `bonus_pending`.
-   - After ~7 days admin enters views; system picks highest matching tier, capped by `maxPayoutPerVideoToman - base`.
+   - On approve: nothing is credited (there is no base payout). Status becomes `bonus_pending`.
+   - After ~7 days admin enters views. Under `MIN_PAID_VIEWS` (1,000) nothing is paid; otherwise the sum of every reached tier is credited, capped by `maxPayoutPerVideoToman`.
    - Status becomes `finalized`.
    - A fixable reject (missing hashtag, etc.) becomes `changes_requested`: one resubmit of the same post, then back to the review queue.
 5. **Withdraw**
@@ -61,9 +60,8 @@ flowchart LR
 - `requiredHashtags: string[]`, `requiredMentions: string[]`
 - `minVideoLengthSeconds`
 - `mediaKitUrls: string[]`
-- `basePayoutToman`
-- `viewBonusTiers: { minViews, bonusToman }[]` (sorted ascending by views)
-- `maxPayoutPerVideoToman` (must be ≥ base)
+- `viewBonusTiers: { minViews, bonusToman }[]` (sorted ascending by views; every `minViews` ≥ 1,000)
+- `maxPayoutPerVideoToman`
 - `maxSubmissionsPerUser` (default 3)
 - `totalBudgetToman`, `spentBudgetToman`
 - `deadline: Date | null`
@@ -78,7 +76,7 @@ Indexes: `{ status, deadline }`, `{ createdAt: -1 }`
 - `instagramPostUrl`, `proofScreenshotUrl`
 - `status: pending | approved | rejected | bonus_pending | finalized`
 - `reviewerNote`, `reviewedBy`, `reviewedAt`
-- `basePayoutToman`, `basePaidAt`
+- `basePayoutToman`, `basePaidAt` (legacy only: always 0 / null for new approvals)
 - `day7Views`, `bonusToman`, `bonusPaidAt`
 - `finalizedAt`, timestamps
 
@@ -87,7 +85,7 @@ Indexes: `{ status, createdAt }`, `{ userId, campaignId }`, `{ campaignId, statu
 Suggested flow statuses:
 
 - `pending` → admin queue
-- `approve` → set `bonus_pending` + credit base
+- `approve` → set `bonus_pending` (no credit)
 - `reject` with `allowResubmit` (default true) → `changes_requested` (one fix: same post, new screenshot)
 - second reject, or `allowResubmit: false` (fraud / wrong content) → `rejected` (dead end; frees the campaign slot)
 - `enter_views` → compute bonus, credit, set `finalized`
@@ -122,15 +120,13 @@ function computeViewBonusToman(
   views: number,
   tiers: { minViews: number; bonusToman: number }[],
   maxPayoutPerVideoToman: number,
-  basePayoutToman: number
+  alreadyPaidToman = 0 // legacy base, if any
 ): number {
-  const sorted = [...tiers].sort((a, b) => a.minViews - b.minViews);
-  let bonus = 0;
-  for (const tier of sorted) {
-    if (views >= tier.minViews) bonus = tier.bonusToman;
-  }
-  const remainingCap = Math.max(0, maxPayoutPerVideoToman - basePayoutToman);
-  return Math.min(bonus, remainingCap);
+  if (views < MIN_PAID_VIEWS) return 0; // 1,000
+  const bonus = tiers
+    .filter((tier) => views >= tier.minViews)
+    .reduce((sum, tier) => sum + tier.bonusToman, 0);
+  return Math.min(bonus, Math.max(0, maxPayoutPerVideoToman - alreadyPaidToman));
 }
 ```
 
@@ -140,7 +136,7 @@ Also enforce campaign budget: refuse approve / enter_views if `spent + amount > 
 
 | Knob | Range / default | Why |
 |---|---|---|
-| Base payout | 300,000–500,000 (default 400,000) | Floor worth the effort even before bonuses |
+| Base payout | none | Approval alone pays nothing; money starts at 1,000 views |
 | View tiers | 1k → +100k, 5k → +300k, 20k → +1M | Highest matching tier; 1M is the dream to chase |
 | Cap per video | 1.5–2M (default 2,000,000) | So the 20k / +1M bonus actually pays out |
 | Min withdrawal | 500,000 | One good video = first cash-out |
@@ -184,7 +180,7 @@ Tabs:
 
 1. **Campaigns** — create form (brief, tiers, budget, deadline), activate/pause/end
 2. **Verifications** — open Instagram profile link, approve/reject
-3. **Submissions** — open post + screenshot; approve base; day-7 view entry
+3. **Submissions** — open post + screenshot; approve; day-7 view entry
 
 All user-facing copy: Persian, RTL, **no em dashes** (`—`).
 
@@ -195,6 +191,30 @@ All user-facing copy: Persian, RTL, **no em dashes** (`—`).
 - Post URL: host `instagram.com`, path `/p|reel|reels|tv/{id}`
 - Profile URL for admin: `https://www.instagram.com/{handle}/`
 - Verification code alphabet: avoid ambiguous chars (`I`, `O`, `0`, `1`)
+
+## Ledger, bank details, day-7 insights, prompt packs
+
+- **Ledger (`EarnLedgerEntry`)**: append-only row for every wallet change
+  (`base_credit`, `bonus_credit`, `clawback`, `payout_request`, `payout_paid`,
+  `payout_reversal`, `adjustment`) with signed `balanceDelta` / `earnedDelta` /
+  `paidOutDelta` and `balanceAfter`. Summing the deltas per user must equal the
+  wallet fields on the user. Rows are written inside the wallet helpers in
+  `src/lib/earn-wallet.ts`; a failed ledger write is logged, never thrown, and
+  shows up as drift. Admin payouts tab has a reconcile check, and recording
+  adjustments gives pre-ledger balances an opening row. Creators see their rows
+  at `/history` (تاریخچه درآمد).
+- **Bank details**: SHEBA (`IR` + 24 digits, mod-97 checked, `src/lib/sheba.ts`)
+  and account holder live on the user. A payout request snapshots both, so a
+  later profile edit cannot change a pending payout. Old free-text `bankNote`
+  payouts still display. Admin can export pending payouts as CSV
+  (`/api/admin/earn/payouts/export`, UTF-8 BOM, toman and rial columns).
+- **Day-7 insights**: seven days after submitting, the creator sends the view
+  count from Instagram insights plus a screenshot
+  (`POST /api/user/earn/submissions/:id/insights`). Admin sees both next to the
+  day-7 entry form and still enters the official number.
+- **Prompt pack**: a campaign can carry a `toolUrl` (https only; `{prompt}` is
+  replaced by the URL-encoded prompt) and up to 12 `promptPack` items shown to
+  creators with copy and open-in-BananaAI buttons.
 
 ## Anti-fraud (v1)
 
@@ -232,7 +252,7 @@ If building near BananaAI patterns:
 1. Models + wallet credit helper
 2. User verification + admin verification queue
 3. Campaign CRUD + public active list
-4. Submission create + admin review (base payout)
+4. Submission create + admin review
 5. Day-7 view entry + bonus
 6. Payout request + admin pay/reject UI
 7. Nav, empty states, Persian copy polish

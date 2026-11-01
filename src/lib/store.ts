@@ -20,6 +20,8 @@ export const emptyProfile: Profile = {
   verificationCode: "",
   verificationNote: null,
   verificationRequestedAt: null,
+  bankSheba: null,
+  bankAccountHolder: null,
 };
 
 function storageKey(userId: string) {

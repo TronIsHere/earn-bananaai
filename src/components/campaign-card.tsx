@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { ArrowUpLeft, ChevronDown, Clock, Flame, ListChecks } from "lucide-react";
+import {
+  ArrowUpLeft,
+  ChevronDown,
+  Clock,
+  Flame,
+  ListChecks,
+  Sparkles,
+} from "lucide-react";
+import { MIN_PAID_VIEWS } from "@/lib/earn";
 import type { Campaign, Platform } from "@/lib/types";
 import { brandCta, brandGlassCard, brandGlassCardHover } from "@/lib/brand";
 import { cn, formatDate, formatToman, formatTomanCompact } from "@/lib/utils";
@@ -9,6 +17,10 @@ import {
   CampaignRequirements,
   campaignHasRequirements,
 } from "@/components/campaign-requirements";
+import {
+  CampaignPromptPack,
+  campaignHasPromptPack,
+} from "@/components/campaign-prompt-pack";
 import { EarningsCalculator } from "@/components/earnings-calculator";
 
 export function PlatformBadge({ platform = "instagram" }: { platform?: Platform } = {}) {
@@ -79,21 +91,20 @@ export function CampaignCard({
         {/* Payout range: the one number that matters */}
         <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="text-xs text-white/45">درآمد هر ریل</span>
-          <span className="earn-money text-2xl text-white sm:text-3xl">
-            {formatTomanCompact(campaign.basePayoutToman)}
-          </span>
           <span className="text-sm font-medium text-white/35">تا</span>
           <span className="earn-money text-2xl text-brand sm:text-3xl">
             {formatTomanCompact(campaign.maxPayoutPerVideoToman)}
           </span>
           <span className="text-xs font-medium text-white/40">تومان</span>
+          <span className="text-[11px] text-white/40">
+            · از {formatToman(MIN_PAID_VIEWS)} بازدید
+          </span>
         </div>
       </div>
 
       {/* Calculator */}
       <div className="px-5">
         <EarningsCalculator
-          basePayoutToman={campaign.basePayoutToman}
           viewBonusTiers={campaign.viewBonusTiers}
           maxPayoutPerVideoToman={campaign.maxPayoutPerVideoToman}
         />
@@ -120,12 +131,32 @@ export function CampaignCard({
         </details>
       )}
 
+      {/* Ready-made prompts + link into the BananaAI tool */}
+      {campaignHasPromptPack(campaign) && (
+        <details className="earn-details group mx-5 mb-3 rounded-xl border border-white/8 bg-black/20">
+          <summary className="flex items-center justify-between gap-2 px-3 py-2.5 text-xs font-semibold text-white/80">
+            <span className="inline-flex items-center gap-1.5">
+              <Sparkles className="size-3.5 text-brand" />
+              پرامپت آماده
+              {(campaign.promptPack?.length ?? 0) > 0 && (
+                <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-[10px] text-white/60">
+                  {formatToman(campaign.promptPack?.length ?? 0)} مورد
+                </span>
+              )}
+            </span>
+            <ChevronDown className="earn-details-chevron size-4 text-white/40 transition-transform" />
+          </summary>
+          <div className="px-3 pb-3">
+            <CampaignPromptPack campaign={campaign} compact bare />
+          </div>
+        </details>
+      )}
+
       {/* Footer */}
       <div className="mt-auto space-y-3 border-t border-white/6 bg-black/15 p-5 pt-4">
         <CampaignBudgetMeter
           spentBudgetToman={campaign.spentBudgetToman}
           totalBudgetToman={campaign.totalBudgetToman}
-          basePayoutToman={campaign.basePayoutToman}
         />
         <div className="flex items-center justify-between gap-3">
           {campaign.deadline ? (

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
+  CalendarClock,
+  Check,
   ExternalLink,
   Eye,
   History,
@@ -16,6 +18,7 @@ import {
 } from "lucide-react";
 import { PlatformBadge } from "@/components/campaign-card";
 import { CampaignBudgetMeter } from "@/components/campaign-budget";
+import { CampaignPromptPack } from "@/components/campaign-prompt-pack";
 import { CampaignRequirements } from "@/components/campaign-requirements";
 import { ReviewSlaNotice, ReviewSlaPromise } from "@/components/review-sla";
 import { SectionBadge } from "@/components/section-badge";
@@ -36,8 +39,15 @@ import { MAX_IMAGE_SIZE } from "@/lib/image-constants";
 import { validateImageFile } from "@/lib/image-validation";
 import type { UserCampaignJson, UserSubmissionJson } from "@/lib/earn-submissions-types";
 import { normalizeInstagramPostUrl } from "@/lib/validations";
-import { cn, formatDate, formatDateTime, formatToman, formatTomanCompact } from "@/lib/utils";
-import { REVIEW_SLA_HOURS, reviewDueAt } from "@/lib/earn";
+import {
+  cn,
+  digitsFromGrouped,
+  formatDate,
+  formatDateTime,
+  formatToman,
+  formatTomanCompact,
+} from "@/lib/utils";
+import { MIN_PAID_VIEWS, REVIEW_SLA_HOURS, reviewDueAt } from "@/lib/earn";
 
 export default function PostsPage() {
   const { status: authStatus } = useSession();
@@ -318,8 +328,7 @@ export default function PostsPage() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <div className="text-xs text-white/50">درآمد این ریل</div>
                   <div className="earn-money text-xl text-white">
-                    {formatTomanCompact(selectedCampaign.basePayoutToman)}
-                    <span className="mx-1.5 text-sm font-medium text-white/35">تا</span>
+                    <span className="ml-1.5 text-sm font-medium text-white/35">تا</span>
                     <span className="text-brand">
                       {formatTomanCompact(selectedCampaign.maxPayoutPerVideoToman)}
                     </span>
@@ -327,15 +336,16 @@ export default function PostsPage() {
                   </div>
                 </div>
                 <p className="text-xs text-white/45">
+                  پرداخت از {formatToman(MIN_PAID_VIEWS)} بازدید شروع می‌شود ·{" "}
                   {formatToman(selectedCampaign.remainingSubmissions)} ارسال از{" "}
                   {formatToman(selectedCampaign.maxSubmissionsPerUser)} برایت باقی مانده
                 </p>
                 <CampaignBudgetMeter
                   spentBudgetToman={selectedCampaign.spentBudgetToman}
                   totalBudgetToman={selectedCampaign.totalBudgetToman}
-                  basePayoutToman={selectedCampaign.basePayoutToman}
                   compact
                 />
+                <CampaignPromptPack campaign={selectedCampaign} />
                 <CampaignRequirements campaign={selectedCampaign} />
               </div>
             )}
@@ -492,6 +502,18 @@ export default function PostsPage() {
                   />
                 )}
 
+                {(sub.status === "bonus_pending" || sub.status === "approved") &&
+                  sub.day7OpensAt && (
+                    <Day7InsightsCard
+                      submission={sub}
+                      onDone={(updated) =>
+                        setSubmissions((prev) =>
+                          prev.map((row) => (row.id === updated.id ? updated : row))
+                        )
+                      }
+                    />
+                  )}
+
                 <div className="mt-3 flex flex-wrap items-center gap-4">
                   <a
                     href={sub.postUrl}
@@ -514,10 +536,14 @@ export default function PostsPage() {
                     </a>
                   )}
                   <div className="mr-auto flex items-center gap-2 rounded-full border border-white/8 bg-black/25 px-3 py-1.5 text-xs text-white/55">
-                    <span>پایه {formatTomanCompact(sub.basePayoutToman)}</span>
-                    <span className="text-white/25">+</span>
-                    <span>بازدید {formatTomanCompact(sub.bonusToman)}</span>
-                    <span className="text-white/25">=</span>
+                    {sub.basePayoutToman > 0 && (
+                      <>
+                        <span>پایه {formatTomanCompact(sub.basePayoutToman)}</span>
+                        <span className="text-white/25">+</span>
+                        <span>بازدید {formatTomanCompact(sub.bonusToman)}</span>
+                        <span className="text-white/25">=</span>
+                      </>
+                    )}
                     <span className="earn-money text-sm text-brand">
                       {formatToman(totalPayout)}
                       <span className="mr-1 text-[10px] font-medium text-brand/70">تومان</span>
@@ -690,6 +716,249 @@ function ResubmitForm({
         {submitting && <Loader2 className="size-4 animate-spin" />}
         {submitting ? "در حال ارسال..." : "اصلاح و ارسال مجدد"}
       </button>
+    </form>
+  );
+}
+
+/**
+ * Day 7 after submitting, the creator reads the view count from Instagram
+ * insights and uploads a screenshot of it. The admin checks that figure
+ * instead of looking the post up.
+ */
+function Day7InsightsCard({
+  submission,
+  onDone,
+}: {
+  submission: UserSubmissionJson;
+  onDone: (updated: UserSubmissionJson) => void;
+}) {
+  const sent = Boolean(submission.day7ProofSubmittedAt);
+  const [editing, setEditing] = useState(false);
+  const [views, setViews] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (proofPreview) URL.revokeObjectURL(proofPreview);
+    };
+  }, [proofPreview]);
+
+  const pickFile = (file: File | null) => {
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofFile(null);
+    setProofPreview(null);
+    if (!file) return;
+    const validation = validateImageFile(file);
+    if (!validation.isValid) {
+      setError(validation.error || "فایل نامعتبر است");
+      return;
+    }
+    setError(null);
+    setProofFile(file);
+    setProofPreview(URL.createObjectURL(file));
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+
+    const digits = digitsFromGrouped(views);
+    if (!digits) {
+      setError("تعداد بازدیدی را که در اینسایت می‌بینی وارد کن.");
+      return;
+    }
+    if (!proofFile) {
+      setError("اسکرین‌شات صفحه اینسایت را انتخاب کن.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const uploadData = new FormData();
+      uploadData.append("image", proofFile);
+      const uploadRes = await fetch("/api/upload/image", {
+        method: "POST",
+        body: uploadData,
+      });
+      const uploadJson = (await uploadRes.json()) as {
+        url?: string;
+        error?: string;
+      };
+      if (!uploadRes.ok || !uploadJson.url) {
+        setError(uploadJson.error || "آپلود اسکرین‌شات ناموفق بود");
+        return;
+      }
+
+      const res = await fetch(
+        `/api/user/earn/submissions/${submission.id}/insights`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            views: Number(digits),
+            screenshotUrl: uploadJson.url,
+          }),
+        }
+      );
+      const data = (await res.json()) as {
+        submission?: UserSubmissionJson;
+        error?: string;
+      };
+      if (!res.ok || !data.submission) {
+        setError(data.error || "ثبت اینسایت ناموفق بود");
+        return;
+      }
+      onDone(data.submission);
+      setEditing(false);
+      setViews("");
+      pickFile(null);
+    } catch {
+      setError("ثبت اینسایت ناموفق بود");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!submission.canSubmitInsights && !sent) {
+    // Past the opening date but not submittable: the bonus is being finalized.
+    if (submission.day7InsightsOpen) return null;
+    return (
+      <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 text-xs text-white/55">
+        <CalendarClock className="mt-0.5 size-4 shrink-0 text-sky-300" />
+        <p>
+          اینسایت روز هفتم از{" "}
+          <strong className="text-white/80">
+            {formatDate(submission.day7OpensAt)}
+          </strong>{" "}
+          باز می‌شود. آن روز عدد بازدید پست را از اینسایت اینستاگرام بخوان و
+          اسکرین‌شاتش را بفرست تا پاداش بازدیدت زودتر نهایی شود.
+        </p>
+      </div>
+    );
+  }
+
+  if (sent && !editing) {
+    return (
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cash/25 bg-cash/[0.07] px-3 py-2.5">
+        <div className="flex items-start gap-2.5 text-xs text-cash">
+          <Check className="mt-0.5 size-4 shrink-0" />
+          <p>
+            اینسایت ثبت شد:{" "}
+            <strong>{formatToman(submission.day7ClaimedViews ?? 0)} بازدید</strong>
+            {submission.day7ProofSubmittedAt
+              ? ` · ${formatDateTime(submission.day7ProofSubmittedAt)}`
+              : ""}
+            . بعد از بررسی ادمین، پاداش بازدید به کیف پولت می‌آید.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {submission.day7ProofScreenshotUrl && (
+            <a
+              href={submission.day7ProofScreenshotUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-white/60 hover:text-white"
+            >
+              اسکرین‌شات
+              <ExternalLink className="size-3" />
+            </a>
+          )}
+          {submission.canSubmitInsights && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-full border border-white/12 px-2.5 py-1 text-[11px] text-white/65 hover:bg-white/5 hover:text-white"
+            >
+              ثبت دوباره
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="mt-3 space-y-3 rounded-2xl border border-brand/25 bg-brand/[0.05] p-4"
+    >
+      <div>
+        <h3 className="text-sm font-bold text-white">
+          {sent ? "اینسایت جدید را بفرست" : "اینسایت روز هفتم را بفرست"}
+        </h3>
+        <p className="mt-1 text-xs leading-relaxed text-white/55">
+          در اینستاگرام زیر پست، «مشاهده اینسایت» را باز کن و عدد بازدید را
+          بخوان. یک اسکرین‌شات از همان صفحه هم لازم است. ادمین عدد را با
+          اسکرین‌شات تطبیق می‌دهد و پاداش بازدید واریز می‌شود.
+        </p>
+      </div>
+      <label className="block space-y-1.5">
+        <span className="text-xs text-white/50">تعداد بازدید در اینسایت</span>
+        <input
+          inputMode="numeric"
+          value={views}
+          onChange={(event) => setViews(digitsFromGrouped(event.target.value))}
+          placeholder="مثلاً 3400"
+          dir="ltr"
+          className={cn(formInput, formFocus, "earn-money text-left")}
+        />
+      </label>
+      <label className="block space-y-1.5">
+        <span className="text-xs text-white/50">اسکرین‌شات صفحه اینسایت</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            className={cn(brandCtaGhost, "cursor-pointer px-4 py-2.5 text-sm")}
+          >
+            <ImagePlus className="size-4" />
+            انتخاب عکس
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(event) => pickFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <span className="text-[11px] text-white/40">
+            JPG، PNG یا WEBP تا {Math.round(MAX_IMAGE_SIZE / (1024 * 1024))}{" "}
+            مگابایت
+          </span>
+        </div>
+        {proofPreview && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={proofPreview}
+            alt="پیش‌نمایش اسکرین‌شات اینسایت"
+            className="mt-2 max-h-40 rounded-xl border border-white/10 object-contain"
+          />
+        )}
+      </label>
+      {error && <p className="text-sm text-rose-300">{error}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={submitting}
+          className={cn(brandCta, "px-4 py-2.5 text-sm")}
+        >
+          {submitting && <Loader2 className="size-4 animate-spin" />}
+          {submitting ? "در حال ارسال..." : "ثبت اینسایت"}
+        </button>
+        {sent && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(false);
+              setError(null);
+            }}
+            disabled={submitting}
+            className="rounded-2xl border border-white/10 px-4 py-2.5 text-sm text-white/60 hover:bg-white/5"
+          >
+            انصراف
+          </button>
+        )}
+      </div>
     </form>
   );
 }

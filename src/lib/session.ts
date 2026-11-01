@@ -46,6 +46,8 @@ export function publicUser(user: {
   earnWalletBalance?: number;
   earnWalletLifetimeEarned?: number;
   earnWalletLifetimePaidOut?: number;
+  earnBankSheba?: string | null;
+  earnBankAccountHolder?: string | null;
 }) {
   return {
     id: user._id.toString(),
@@ -63,6 +65,8 @@ export function publicUser(user: {
       : user.earnVerificationStatus === "pending" && user.updatedAt
         ? user.updatedAt.toISOString()
         : null,
+    bankSheba: user.earnBankSheba ?? null,
+    bankAccountHolder: user.earnBankAccountHolder ?? null,
     earnWallet: {
       available: user.earnWalletBalance ?? 0,
       lifetimeEarned: user.earnWalletLifetimeEarned ?? 0,

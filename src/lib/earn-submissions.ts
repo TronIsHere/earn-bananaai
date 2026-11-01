@@ -1,7 +1,6 @@
 import "server-only";
 import mongoose, { type Types } from "mongoose";
 import {
-  creditEarnWallet,
   debitEarnWallet,
   EarnWalletError,
 } from "@/lib/earn-wallet";
@@ -9,6 +8,9 @@ import connectDB from "@/lib/mongodb";
 import { isOurProofObjectUrl } from "@/lib/s3/client";
 import {
   canResubmitSubmission,
+  canSubmitDay7Insights,
+  day7InsightsOpensAt,
+  DAY7_ELIGIBLE_STATUSES,
   isCampaignOpen,
   MAX_SUBMISSION_RESUBMITS,
   type EarnSubmissionStatus,
@@ -24,6 +26,7 @@ import type {
 import EarnCampaign, { type IEarnCampaign } from "@/models/earn-campaign";
 import EarnSubmission, { type IEarnSubmission } from "@/models/earn-submission";
 import User from "@/models/user";
+import { formatDate } from "@/lib/utils";
 
 export type SubmissionErrorCode =
   | "UNVERIFIED"
@@ -36,6 +39,8 @@ export type SubmissionErrorCode =
   | "ALREADY_REVIEWED"
   | "NOT_REVOCABLE"
   | "RESUBMIT_NOT_ALLOWED"
+  | "INSIGHTS_NOT_OPEN"
+  | "INSIGHTS_NOT_ELIGIBLE"
   | "BUDGET_EXCEEDED"
   | "INSUFFICIENT_BALANCE"
   | "USER_NOT_FOUND";
@@ -111,6 +116,13 @@ export function serializeUserSubmission(doc: SubmissionLean): UserSubmissionJson
     canResubmit: canResubmitSubmission(doc),
     createdAt: toIso(doc.createdAt) ?? new Date().toISOString(),
     resubmittedAt: toIso(doc.resubmittedAt),
+    day7OpensAt: day7InsightsOpensAt(doc.createdAt)?.toISOString() ?? null,
+    day7InsightsOpen:
+      (day7InsightsOpensAt(doc.createdAt)?.getTime() ?? Infinity) <= Date.now(),
+    canSubmitInsights: canSubmitDay7Insights(doc),
+    day7ClaimedViews: doc.day7ClaimedViews ?? null,
+    day7ProofScreenshotUrl: doc.day7ProofScreenshotUrl ?? null,
+    day7ProofSubmittedAt: toIso(doc.day7ProofSubmittedAt),
   };
 }
 
@@ -296,23 +308,16 @@ export async function approveEarnSubmission(params: {
     );
   }
 
-  const campaign = await EarnCampaign.findById(submission.campaignId);
-  if (!campaign) {
-    throw new SubmissionError("کمپین پیدا نشد", "CAMPAIGN_NOT_FOUND", 404);
-  }
-
-  const basePayoutToman = campaign.basePayoutToman;
-  const now = new Date();
-
+  // No payout on approval: money only comes from day-7 views (MIN_PAID_VIEWS+).
   const claimed = await EarnSubmission.findOneAndUpdate(
     { _id: submissionId, status: "pending" },
     {
       $set: {
         status: "bonus_pending",
         reviewedBy: reviewerId,
-        reviewedAt: now,
+        reviewedAt: new Date(),
         reviewerNote: null,
-        basePayoutToman,
+        basePayoutToman: 0,
       },
     },
     { new: true }
@@ -325,45 +330,6 @@ export async function approveEarnSubmission(params: {
       409
     );
   }
-
-  try {
-    if (basePayoutToman > 0) {
-      await creditEarnWallet({
-        userId: claimed.userId,
-        campaignId: claimed.campaignId,
-        amountToman: basePayoutToman,
-      });
-    }
-  } catch (error) {
-    await EarnSubmission.findByIdAndUpdate(submissionId, {
-      $set: {
-        status: "pending",
-        reviewedBy: null,
-        reviewedAt: null,
-        basePayoutToman: 0,
-      },
-    });
-    if (error instanceof EarnWalletError) {
-      if (error.code === "BUDGET_EXCEEDED") {
-        throw new SubmissionError(
-          "بودجه کمپین برای این پاداش کافی نیست.",
-          "BUDGET_EXCEEDED",
-          409
-        );
-      }
-      if (error.code === "USER_NOT_FOUND") {
-        throw new SubmissionError("کاربر پیدا نشد", "USER_NOT_FOUND", 404);
-      }
-      if (error.code === "CAMPAIGN_NOT_FOUND") {
-        throw new SubmissionError("کمپین پیدا نشد", "CAMPAIGN_NOT_FOUND", 404);
-      }
-    }
-    throw error;
-  }
-
-  await EarnSubmission.findByIdAndUpdate(submissionId, {
-    $set: { basePaidAt: now },
-  });
 }
 
 const REVOCABLE_STATUSES: EarnSubmissionStatus[] = [
@@ -372,8 +338,9 @@ const REVOCABLE_STATUSES: EarnSubmissionStatus[] = [
 ];
 
 /**
- * Undoes base-payout approval: claw back wallet credit and return the
- * submission to the pending review queue. Not allowed after day-7 finalize.
+ * Undoes approval and returns the submission to the pending review queue.
+ * Legacy submissions that were credited a base payout get it clawed back.
+ * Not allowed after day-7 finalize.
  */
 export async function revokeEarnSubmissionApproval(params: {
   submissionId: string;
@@ -420,7 +387,7 @@ export async function revokeEarnSubmissionApproval(params: {
         status: "pending",
         reviewedBy: reviewerId,
         reviewedAt: new Date(),
-        reviewerNote: "تأیید و واریز پایه لغو شد.",
+        reviewerNote: "تأیید ارسال لغو شد.",
         basePayoutToman: 0,
         basePaidAt: null,
       },
@@ -442,6 +409,11 @@ export async function revokeEarnSubmissionApproval(params: {
         userId: claimed.userId,
         campaignId: claimed.campaignId,
         amountToman: basePayoutToman,
+        ledger: {
+          submissionId,
+          actorId: reviewerId,
+          note: "تأیید ارسال برگردانده شد",
+        },
       });
     }
   } catch (error) {
@@ -636,4 +608,100 @@ export async function resubmitEarnSubmission(params: {
     }
     throw error;
   }
+}
+
+/**
+ * Creator sends the Instagram insights for a post once it has had a week:
+ * the view count they read plus a screenshot of it. Admin still enters the
+ * official number; this gives them the figure and the evidence to check it
+ * against. Sending again replaces the earlier insights until the bonus is
+ * finalized.
+ */
+export async function submitDay7Insights(params: {
+  userId: string;
+  submissionId: string;
+  views: number;
+  screenshotUrl: string;
+}): Promise<UserSubmissionJson> {
+  const { userId, submissionId, views, screenshotUrl } = params;
+  await connectDB();
+
+  const submission = await EarnSubmission.findById(submissionId);
+  if (!submission || submission.userId.toString() !== userId) {
+    throw new SubmissionError("ارسال پیدا نشد", "SUBMISSION_NOT_FOUND", 404);
+  }
+
+  const notEligible = () =>
+    new SubmissionError(
+      submission.status === "finalized" || submission.finalizedAt
+        ? "پاداش این ارسال نهایی شده و دیگر نیازی به اینسایت نیست."
+        : "ثبت اینسایت فقط برای پست‌های تأییدشده ممکن است.",
+      "INSIGHTS_NOT_ELIGIBLE",
+      409
+    );
+
+  if (
+    !DAY7_ELIGIBLE_STATUSES.includes(submission.status) ||
+    submission.finalizedAt ||
+    submission.day7Views != null
+  ) {
+    throw notEligible();
+  }
+
+  const opensAt = day7InsightsOpensAt(submission.createdAt);
+  if (opensAt && opensAt.getTime() > Date.now()) {
+    throw new SubmissionError(
+      `اینسایت روز هفتم از ${formatDate(opensAt.toISOString())} باز می‌شود.`,
+      "INSIGHTS_NOT_OPEN",
+      409
+    );
+  }
+
+  if (!isOurProofObjectUrl(screenshotUrl, userId)) {
+    throw new SubmissionError(
+      "اسکرین‌شات باید از طریق همین سامانه آپلود شده باشد.",
+      "INVALID_PROOF",
+      400
+    );
+  }
+  if (
+    screenshotUrl === submission.proofScreenshotUrl ||
+    screenshotUrl === submission.day7ProofScreenshotUrl
+  ) {
+    throw new SubmissionError(
+      "برای اینسایت یک اسکرین‌شات تازه لازم است.",
+      "INVALID_PROOF",
+      400
+    );
+  }
+
+  const updated = await EarnSubmission.findOneAndUpdate(
+    {
+      _id: submissionId,
+      userId: submission.userId,
+      status: { $in: DAY7_ELIGIBLE_STATUSES },
+      finalizedAt: null,
+      day7Views: null,
+    },
+    {
+      $set: {
+        day7ClaimedViews: views,
+        day7ProofScreenshotUrl: screenshotUrl,
+        day7ProofSubmittedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+  if (!updated) throw notEligible();
+
+  const campaign = await EarnCampaign.findById(updated.campaignId).select(
+    "title"
+  );
+  return serializeUserSubmission({
+    ...updated.toObject(),
+    campaignId: {
+      _id: updated.campaignId,
+      title: campaign?.title ?? "",
+    } as CampaignLean,
+  } as SubmissionLean);
 }

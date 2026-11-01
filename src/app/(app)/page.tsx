@@ -14,7 +14,6 @@ export default async function HomePage() {
   let campaigns: {
     id: string;
     title: string;
-    basePayoutToman: number;
     maxPayoutPerVideoToman: number;
     trending?: boolean;
   }[] = [];
@@ -23,7 +22,6 @@ export default async function HomePage() {
     campaigns = (await listPublicCampaigns()).slice(0, 2).map((campaign) => ({
       id: campaign.id,
       title: campaign.title,
-      basePayoutToman: campaign.basePayoutToman,
       maxPayoutPerVideoToman: campaign.maxPayoutPerVideoToman,
       trending: campaign.trending,
     }));

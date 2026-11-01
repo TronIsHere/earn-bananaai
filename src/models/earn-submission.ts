@@ -19,6 +19,10 @@ export interface IEarnSubmission {
   basePayoutToman: number;
   basePaidAt: Date | null;
   day7Views: number | null;
+  /** Creator-submitted insights: the number they read and the screenshot. */
+  day7ClaimedViews: number | null;
+  day7ProofScreenshotUrl: string | null;
+  day7ProofSubmittedAt: Date | null;
   bonusToman: number;
   bonusPaidAt: Date | null;
   finalizedAt: Date | null;
@@ -93,6 +97,20 @@ const EarnSubmissionSchema = new Schema<IEarnSubmission>(
       default: null,
       min: 0,
     },
+    day7ClaimedViews: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    day7ProofScreenshotUrl: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    day7ProofSubmittedAt: {
+      type: Date,
+      default: null,
+    },
     bonusToman: {
       type: Number,
       required: true,
@@ -127,7 +145,7 @@ EarnSubmissionSchema.index(
 const existingModel = mongoose.models.EarnSubmission as
   | Model<IEarnSubmission>
   | undefined;
-if (existingModel && !existingModel.schema.path("resubmitCount")) {
+if (existingModel && !existingModel.schema.path("day7ClaimedViews")) {
   mongoose.deleteModel("EarnSubmission");
 }
 

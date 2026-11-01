@@ -31,23 +31,17 @@ const urgencyBarClass: Record<CampaignBudgetUrgency, string> = {
 export function CampaignBudgetMeter({
   spentBudgetToman,
   totalBudgetToman,
-  basePayoutToman = 0,
   compact = false,
 }: {
   spentBudgetToman: number;
   totalBudgetToman: number;
-  basePayoutToman?: number;
   compact?: boolean;
 }) {
   if (totalBudgetToman <= 0) return null;
 
   const remaining = remainingBudgetToman(spentBudgetToman, totalBudgetToman);
   const spentPct = spentBudgetPercent(spentBudgetToman, totalBudgetToman);
-  const urgency = campaignBudgetUrgency(
-    remaining,
-    totalBudgetToman,
-    basePayoutToman
-  );
+  const urgency = campaignBudgetUrgency(remaining, totalBudgetToman);
 
   return (
     <div className={compact ? "space-y-1" : "space-y-1.5"}>

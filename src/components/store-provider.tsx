@@ -42,6 +42,8 @@ function profileFromUser(user: {
   verificationCode?: string;
   verificationNote?: string | null;
   verificationRequestedAt?: string | null;
+  bankSheba?: string | null;
+  bankAccountHolder?: string | null;
 }): Partial<Profile> {
   return {
     id: user.id,
@@ -55,6 +57,8 @@ function profileFromUser(user: {
     verificationCode: user.verificationCode ?? "",
     verificationNote: user.verificationNote ?? null,
     verificationRequestedAt: user.verificationRequestedAt ?? null,
+    bankSheba: user.bankSheba ?? null,
+    bankAccountHolder: user.bankAccountHolder ?? null,
   };
 }
 

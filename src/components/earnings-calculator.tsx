@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { Crown, Eye, TrendingUp } from "lucide-react";
 import {
   computeCampaignPayoutToman,
-  computeViewBonusToman,
   defaultEarningsSliderViews,
   earningsSliderMaxViews,
   earningsSliderStep,
+  MIN_PAID_VIEWS,
   nextViewBonusTier,
   sumReachedViewBonusToman,
 } from "@/lib/earn";
@@ -20,7 +20,6 @@ import { Money } from "@/components/money";
  * landing-page version; `variant="card"` sits inside a campaign card.
  */
 export function EarningsCalculator({
-  basePayoutToman,
   viewBonusTiers,
   maxPayoutPerVideoToman,
   variant = "card",
@@ -28,7 +27,6 @@ export function EarningsCalculator({
   onViewsChange,
   className,
 }: {
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   variant?: "card" | "hero";
@@ -49,18 +47,12 @@ export function EarningsCalculator({
     onViewsChange?.(next);
   };
 
-  const bonus = computeViewBonusToman(
-    views,
-    viewBonusTiers,
-    maxPayoutPerVideoToman,
-    basePayoutToman
-  );
   const total = computeCampaignPayoutToman(
     views,
     viewBonusTiers,
-    maxPayoutPerVideoToman,
-    basePayoutToman
+    maxPayoutPerVideoToman
   );
+  const belowMinimum = views < MIN_PAID_VIEWS;
   const nextTier = nextViewBonusTier(views, viewBonusTiers);
   const rawBonus = sumReachedViewBonusToman(views, viewBonusTiers);
   const atCap =
@@ -72,8 +64,7 @@ export function EarningsCalculator({
     ? computeCampaignPayoutToman(
         nextTier.minViews,
         viewBonusTiers,
-        maxPayoutPerVideoToman,
-        basePayoutToman
+        maxPayoutPerVideoToman
       )
     : null;
 
@@ -171,23 +162,22 @@ export function EarningsCalculator({
           hero ? "text-sm text-white/60" : "text-[11px] text-white/45"
         )}
       >
-        <span>
-          پایه{" "}
-          <strong className="text-white/85">{formatTomanCompact(basePayoutToman)}</strong>
-        </span>
-        <span className="text-white/25">+</span>
-        <span>
-          پاداش بازدید{" "}
-          <strong className={cn(bonus > 0 ? "text-brand" : "text-white/50")}>
-            {formatTomanCompact(bonus)}
-          </strong>
-        </span>
+        {belowMinimum ? (
+          <span className="inline-flex items-center gap-1 text-white/55">
+            <Eye className="size-3.5" />
+            پرداخت از{" "}
+            <strong className="text-white/85">
+              {formatViewsCompact(MIN_PAID_VIEWS)}
+            </strong>{" "}
+            بازدید شروع می‌شود
+          </span>
+        ) : null}
         {atCap ? (
           <span className="inline-flex items-center gap-1 font-semibold text-brand">
             <Crown className="size-3.5" />
             سقف پرداخت این ریل
           </span>
-        ) : nextTier && nextTotal != null ? (
+        ) : nextTier && nextTotal != null && !belowMinimum ? (
           <span className="inline-flex items-center gap-1 text-white/55">
             <TrendingUp className="size-3.5 text-brand" />
             با {formatViewsCompact(nextTier.minViews)} بازدید می‌شود{" "}
@@ -198,12 +188,6 @@ export function EarningsCalculator({
 
       {sortedTiers.length > 0 && (
         <div className={cn("flex flex-wrap gap-1.5", hero ? "pt-1" : "mt-3")}>
-          <TierButton
-            active={views < (sortedTiers[0]?.minViews ?? Infinity)}
-            onClick={() => setViews(0)}
-            label="فقط تأیید"
-            amount={basePayoutToman}
-          />
           {sortedTiers.map((tier) => {
             const reached = views >= tier.minViews;
             const isTop = topTier != null && tier.minViews === topTier.minViews;
@@ -218,8 +202,7 @@ export function EarningsCalculator({
                 amount={computeCampaignPayoutToman(
                   tier.minViews,
                   sortedTiers,
-                  maxPayoutPerVideoToman,
-                  basePayoutToman
+                  maxPayoutPerVideoToman
                 )}
               />
             );

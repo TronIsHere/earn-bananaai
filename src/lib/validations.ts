@@ -2,10 +2,18 @@ import { z } from "zod";
 import {
   EARN_CAMPAIGN_STATUSES,
   EARN_PLATFORMS,
+  MIN_PAID_VIEWS,
   MIN_PAYOUT_TOMAN,
 } from "./earn";
 import { isValidInstagramHandle, normalizeInstagramHandle } from "./instagram";
 import { toIranMobile } from "./phone";
+import {
+  isValidToolUrl,
+  MAX_PROMPT_LENGTH,
+  MAX_PROMPT_PACK_ITEMS,
+  MAX_PROMPT_TITLE_LENGTH,
+} from "./prompt-pack";
+import { isValidSheba, normalizeSheba } from "./sheba";
 
 export const mobileNumberSchema = z
   .string()
@@ -54,11 +62,40 @@ export const instagramHandleSchema = z
     message: "نام کاربری اینستاگرام نامعتبر است",
   });
 
-export const profileUpdateSchema = z.object({
-  firstName: firstNameSchema.optional(),
-  lastName: lastNameSchema.optional(),
-  instagramHandle: handleSchema.optional(),
-});
+/** Empty string clears the field; anything else must be a valid SHEBA. */
+export const shebaSchema = z
+  .string()
+  .trim()
+  .transform(normalizeSheba)
+  .refine((value) => value === "" || isValidSheba(value), {
+    message: "شماره شبا نامعتبر است. با IR شروع می‌شود و ۲۴ رقم دارد.",
+  });
+
+export const accountHolderSchema = z
+  .string()
+  .trim()
+  .max(100, "نام صاحب حساب خیلی طولانی است")
+  .refine(
+    (value) =>
+      value === "" ||
+      (value.length >= 3 && /^[\u0600-\u06FFa-zA-Z\s\u200c]+$/.test(value)),
+    { message: "نام صاحب حساب را با حروف فارسی یا انگلیسی بنویسید" }
+  );
+
+export const profileUpdateSchema = z
+  .object({
+    firstName: firstNameSchema.optional(),
+    lastName: lastNameSchema.optional(),
+    instagramHandle: handleSchema.optional(),
+    bankSheba: shebaSchema.optional(),
+    bankAccountHolder: accountHolderSchema.optional(),
+  })
+  .refine(
+    (data) =>
+      (data.bankSheba === undefined) === (data.bankAccountHolder === undefined) &&
+      Boolean(data.bankSheba) === Boolean(data.bankAccountHolder),
+    { message: "شماره شبا و نام صاحب حساب را با هم وارد کنید" }
+  );
 
 export const mongoIdSchema = z
   .string()
@@ -133,6 +170,15 @@ export const resubmitSubmissionSchema = z.object({
   proofScreenshotUrl: z.string().trim().url("آدرس اسکرین‌شات نامعتبر است"),
 });
 
+export const submitDay7InsightsSchema = z.object({
+  views: z.coerce
+    .number({ error: "تعداد بازدید نامعتبر است" })
+    .int("تعداد بازدید باید عدد صحیح باشد")
+    .min(0, "تعداد بازدید نمی‌تواند منفی باشد")
+    .max(1_000_000_000, "تعداد بازدید بیش از حد مجاز است"),
+  screenshotUrl: z.string().trim().url("آدرس اسکرین‌شات نامعتبر است"),
+});
+
 export const enterDay7ViewsSchema = z.object({
   action: z.literal("enter_views"),
   views: z.coerce
@@ -183,7 +229,10 @@ const viewBonusTierItemSchema = z.object({
   minViews: z.coerce
     .number({ error: "بازدید سطح نامعتبر است" })
     .int()
-    .min(0),
+    .min(
+      MIN_PAID_VIEWS,
+      `حداقل بازدید هر سطح ${MIN_PAID_VIEWS.toLocaleString("fa-IR")} است`
+    ),
   bonusToman: tomanInt,
 });
 
@@ -226,6 +275,36 @@ const optionalDeadlineSchema = z
     value === undefined ? undefined : parseDeadline(value)
   );
 
+const toolUrlMessage =
+  "لینک ابزار باید با https شروع شود. می‌توانی {prompt} را جای متن پرامپت بگذاری.";
+
+const promptPackSchema = z
+  .array(
+    z.object({
+      title: z
+        .string()
+        .trim()
+        .min(1, "عنوان پرامپت الزامی است")
+        .max(MAX_PROMPT_TITLE_LENGTH, "عنوان پرامپت خیلی طولانی است"),
+      prompt: z
+        .string()
+        .trim()
+        .min(1, "متن پرامپت الزامی است")
+        .max(MAX_PROMPT_LENGTH, "متن پرامپت خیلی طولانی است"),
+    })
+  )
+  .max(MAX_PROMPT_PACK_ITEMS, "تعداد پرامپت‌ها بیش از حد مجاز است");
+
+/** Blank clears the link (null); otherwise it must be a safe https URL. */
+const toolUrlSchema = z
+  .string()
+  .trim()
+  .max(2000, toolUrlMessage)
+  .transform((value) => (value === "" ? null : value))
+  .refine((value) => value === null || isValidToolUrl(value), {
+    message: toolUrlMessage,
+  });
+
 export const createCampaignSchema = z
   .object({
     title: z.string().trim().min(1, "عنوان کمپین الزامی است").max(200),
@@ -236,7 +315,6 @@ export const createCampaignSchema = z
     requiredMentions: tagListSchema,
     minVideoLengthSeconds: z.coerce.number().int().min(0).optional().default(0),
     mediaKitUrls: z.array(z.string().trim().url()).optional().default([]),
-    basePayoutToman: tomanInt,
     viewBonusTiers: viewBonusTiersSchema,
     maxPayoutPerVideoToman: tomanInt,
     maxSubmissionsPerUser: z.coerce.number().int().min(1).optional().default(3),
@@ -244,10 +322,8 @@ export const createCampaignSchema = z
     deadline: createDeadlineSchema,
     status: z.enum(EARN_CAMPAIGN_STATUSES).optional().default("draft"),
     trending: z.boolean().optional().default(false),
-  })
-  .refine((data) => data.maxPayoutPerVideoToman >= data.basePayoutToman, {
-    message: "سقف هر ویدیو باید حداقل برابر پاداش پایه باشد",
-    path: ["maxPayoutPerVideoToman"],
+    toolUrl: toolUrlSchema.optional().default(null),
+    promptPack: promptPackSchema.optional().default([]),
   });
 
 export const updateCampaignSchema = z
@@ -260,7 +336,6 @@ export const updateCampaignSchema = z
     requiredMentions: optionalTagListSchema,
     minVideoLengthSeconds: z.coerce.number().int().min(0).optional(),
     mediaKitUrls: z.array(z.string().trim().url()).optional(),
-    basePayoutToman: tomanInt.optional(),
     viewBonusTiers: optionalViewBonusTiersSchema,
     maxPayoutPerVideoToman: tomanInt.optional(),
     maxSubmissionsPerUser: z.coerce.number().int().min(1).optional(),
@@ -268,25 +343,12 @@ export const updateCampaignSchema = z
     deadline: optionalDeadlineSchema,
     status: z.enum(EARN_CAMPAIGN_STATUSES).optional(),
     trending: z.boolean().optional(),
+    toolUrl: toolUrlSchema.optional(),
+    promptPack: promptPackSchema.optional(),
   })
   .refine(
     (data) => Object.values(data).some((value) => value !== undefined),
     { message: "حداقل یک فیلد برای به‌روزرسانی لازم است" }
-  )
-  .refine(
-    (data) => {
-      if (
-        data.maxPayoutPerVideoToman == null ||
-        data.basePayoutToman == null
-      ) {
-        return true;
-      }
-      return data.maxPayoutPerVideoToman >= data.basePayoutToman;
-    },
-    {
-      message: "سقف هر ویدیو باید حداقل برابر پاداش پایه باشد",
-      path: ["maxPayoutPerVideoToman"],
-    }
   );
 
 export const payoutRequestSchema = z.object({
@@ -297,11 +359,6 @@ export const payoutRequestSchema = z.object({
       MIN_PAYOUT_TOMAN,
       `حداقل مبلغ درخواست واریز ${MIN_PAYOUT_TOMAN.toLocaleString("fa-IR")} تومان است`
     ),
-  bankNote: z
-    .string()
-    .trim()
-    .min(8, "شماره شبا یا کارت و نام صاحب حساب را بنویسید")
-    .max(500, "توضیح حساب بانکی خیلی طولانی است"),
 });
 
 export const payoutDecisionSchema = z.discriminatedUnion("decision", [

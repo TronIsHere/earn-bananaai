@@ -8,17 +8,16 @@ import { cn, formatToman, formatTomanCompact, formatViewsCompact } from "@/lib/u
 
 /**
  * Visual "the more views, the more money" ladder. Each rung shows the total a
- * creator takes home at that view count (base + reached bonuses, capped).
+ * creator takes home at that view count (reached bonuses, capped). Nothing is
+ * paid below the first rung.
  */
 export function PayoutLadder({
-  basePayoutToman,
   viewBonusTiers,
   maxPayoutPerVideoToman,
   activeViews,
   compact = false,
   className,
 }: {
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   /** Highlights rungs at or below this view count. */
@@ -27,20 +26,16 @@ export function PayoutLadder({
   className?: string;
 }) {
   const sorted = [...viewBonusTiers].sort((a, b) => a.minViews - b.minViews);
-  const rungs = [
-    { minViews: 0, label: "تأیید پست", total: basePayoutToman, dream: false },
-    ...sorted.map((tier) => ({
-      minViews: tier.minViews,
-      label: `${formatViewsCompact(tier.minViews)} بازدید`,
-      total: computeCampaignPayoutToman(
-        tier.minViews,
-        sorted,
-        maxPayoutPerVideoToman,
-        basePayoutToman
-      ),
-      dream: isDreamViewBonusTier(tier, sorted),
-    })),
-  ];
+  const rungs = sorted.map((tier) => ({
+    minViews: tier.minViews,
+    label: `${formatViewsCompact(tier.minViews)} بازدید`,
+    total: computeCampaignPayoutToman(
+      tier.minViews,
+      sorted,
+      maxPayoutPerVideoToman
+    ),
+    dream: isDreamViewBonusTier(tier, sorted),
+  }));
   const max = Math.max(maxPayoutPerVideoToman, ...rungs.map((r) => r.total), 1);
 
   return (
@@ -95,7 +90,7 @@ export function PayoutLadder({
                     rung.dream ? "font-semibold text-white" : "text-white/70"
                   )}
                 >
-                  {index > 0 ? <Eye className="size-3 text-white/35" /> : null}
+                  <Eye className="size-3 text-white/35" />
                   {rung.label}
                 </span>
               </div>

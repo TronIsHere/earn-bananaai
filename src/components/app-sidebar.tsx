@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  ReceiptText,
   ScrollText,
   Shield,
   UserRound,
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/", label: "داشبورد", icon: LayoutDashboard },
   { href: "/posts", label: "ارسال‌های من", icon: History },
   { href: "/billing", label: "کیف پول", icon: CreditCard },
+  { href: "/history", label: "تاریخچه درآمد", icon: ReceiptText },
   { href: "/profile", label: "پروفایل و تأیید پیج", icon: UserRound },
 ];
 

@@ -16,7 +16,11 @@ import {
   ReviewSlaQueueBanner,
   reviewSlaCardClass,
 } from "@/components/review-sla";
-import { FIXABLE_REJECT_REASONS, MAX_SUBMISSION_RESUBMITS } from "@/lib/earn";
+import {
+  FIXABLE_REJECT_REASONS,
+  MAX_SUBMISSION_RESUBMITS,
+  MIN_PAID_VIEWS,
+} from "@/lib/earn";
 import type { AdminSubmissionJson } from "@/lib/earn-submissions-types";
 import {
   brandCta,
@@ -138,8 +142,7 @@ function ReviewCard({
   const creatorName = submission.user
     ? `${submission.user.firstName} ${submission.user.lastName}`.trim()
     : "کاربر";
-  const base =
-    submission.campaign?.basePayoutToman ?? submission.basePayoutToman;
+  const maxPayout = submission.campaign?.maxPayoutPerVideoToman ?? null;
   const willAllowResubmit = allowResubmit && !alreadyResubmitted;
 
   const review = async (decision: "approve" | "reject" | "revoke") => {
@@ -175,12 +178,12 @@ function ReviewCard({
         setJustApproved(false);
         setDone(null);
         setRejecting(false);
-        setRevokedNotice("تأیید لغو شد و پاداش پایه از کیف پول برگشت.");
+        setRevokedNotice("تأیید لغو شد و ارسال به صف بررسی برگشت.");
         return;
       }
       setDone(
         decision === "approve"
-          ? `${formatToman(base)} تومان پاداش پایه واریز شد.`
+          ? `تأیید شد. پرداخت بعد از ثبت بازدید روز هفتم و از ${formatToman(MIN_PAID_VIEWS)} بازدید به بالا.`
           : willAllowResubmit
             ? "رد شد؛ سازنده یک‌بار می‌تواند اصلاح کند."
             : "ارسال رد شد."
@@ -232,9 +235,11 @@ function ReviewCard({
               : ""}
           </div>
         </div>
-        <div className="text-left text-xs text-white/45">
-          پاداش پایه {formatToman(base)} تومان
-        </div>
+        {maxPayout != null && (
+          <div className="text-left text-xs text-white/45">
+            سقف هر ویدیو {formatToman(maxPayout)} تومان
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -379,7 +384,7 @@ function ReviewCard({
               ) : (
                 <Check className="size-4" />
               )}
-              تأیید و واریز پایه
+              تأیید پست
             </button>
             {rejecting ? (
               <>

@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Banknote, Clapperboard, Link2, UserRoundCheck } from "lucide-react";
-import { REVIEW_SLA_HOURS } from "@/lib/earn";
+import { MIN_PAID_VIEWS, REVIEW_SLA_HOURS } from "@/lib/earn";
 import { brandGlassCard } from "@/lib/brand";
 import { cn, formatToman } from "@/lib/utils";
 
@@ -28,12 +28,12 @@ export const HOW_IT_WORKS_STEPS: HowItWorksStep[] = [
     icon: Link2,
     title: "لینک پست را ثبت کن",
     text: `لینک ریل و یک اسکرین‌شات بفرست. تیم ما حداکثر ${formatToman(REVIEW_SLA_HOURS)} ساعته بررسی می‌کند.`,
-    outcome: "پاداش پایه واریز شد",
+    outcome: "پست تأیید شد",
   },
   {
     icon: Banknote,
     title: "پول بگیر",
-    text: "روز هفتم بازدید ثبت می‌شود و پاداش بازدید اضافه می‌شود. بعد از رسیدن به حداقل برداشت، به شبا یا کارتت واریز می‌کنیم.",
+    text: `روز هفتم بازدید ثبت می‌شود و از ${formatToman(MIN_PAID_VIEWS)} بازدید به بالا پاداش می‌گیری. بعد از رسیدن به حداقل برداشت، به شبایت واریز می‌کنیم.`,
     outcome: "واریز به حساب",
   },
 ];

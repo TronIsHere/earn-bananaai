@@ -1,5 +1,5 @@
 import "server-only";
-import type { Types } from "mongoose";
+import mongoose, { type Types } from "mongoose";
 import { MIN_PAYOUT_TOMAN, type EarnPayoutStatus } from "@/lib/earn";
 import {
   EarnWalletError,
@@ -8,6 +8,7 @@ import {
   reserveEarnPayout,
 } from "@/lib/earn-wallet";
 import connectDB, { isMongoDuplicateKey } from "@/lib/mongodb";
+import { isValidSheba, shebaBankName } from "@/lib/sheba";
 import EarnPayout, { type IEarnPayout } from "@/models/earn-payout";
 import User from "@/models/user";
 
@@ -15,6 +16,7 @@ export type PayoutErrorCode =
   | "BELOW_MINIMUM"
   | "INSUFFICIENT_BALANCE"
   | "PENDING_EXISTS"
+  | "BANK_DETAILS_MISSING"
   | "PAYOUT_NOT_FOUND"
   | "ALREADY_REVIEWED"
   | "USER_NOT_FOUND"
@@ -56,7 +58,10 @@ export function serializePayout(
   return {
     id: payout._id.toString(),
     amount: payout.amount,
-    bankNote: payout.bankNote,
+    bankNote: payout.bankNote ?? "",
+    bankSheba: payout.bankSheba ?? null,
+    bankAccountHolder: payout.bankAccountHolder ?? null,
+    bankName: shebaBankName(payout.bankSheba),
     status: payout.status,
     adminNote: payout.adminNote,
     paidAt: toIso(payout.paidAt),
@@ -85,9 +90,26 @@ export async function listUserPayouts(userId: string) {
 export async function requestEarnPayout(params: {
   userId: string;
   amount: number;
-  bankNote: string;
 }) {
   await connectDB();
+
+  const account = await User.findById(params.userId).select(
+    "earnBankSheba earnBankAccountHolder"
+  );
+  if (!account) {
+    throw new PayoutError("کاربر پیدا نشد.", "USER_NOT_FOUND", 404);
+  }
+  if (
+    !account.earnBankSheba ||
+    !account.earnBankAccountHolder ||
+    !isValidSheba(account.earnBankSheba)
+  ) {
+    throw new PayoutError(
+      "ابتدا شماره شبا و نام صاحب حساب را ثبت کن.",
+      "BANK_DETAILS_MISSING",
+      400
+    );
+  }
 
   const pending = await EarnPayout.findOne({
     userId: params.userId,
@@ -101,18 +123,27 @@ export async function requestEarnPayout(params: {
     );
   }
 
+  // The id is known up front so the ledger row for the reserve can point at it.
+  const payoutId = new mongoose.Types.ObjectId();
+
   let reserved;
   try {
-    reserved = await reserveEarnPayout(params.userId, params.amount);
+    reserved = await reserveEarnPayout(params.userId, params.amount, {
+      payoutId,
+      actorId: params.userId,
+      idempotencyKey: `payout_request:${payoutId}`,
+    });
   } catch (error) {
     throw mapWalletError(error);
   }
 
   try {
     const payout = await EarnPayout.create({
+      _id: payoutId,
       userId: params.userId,
       amount: params.amount,
-      bankNote: params.bankNote,
+      bankSheba: account.earnBankSheba,
+      bankAccountHolder: account.earnBankAccountHolder,
       status: "pending",
     });
     return {
@@ -120,7 +151,12 @@ export async function requestEarnPayout(params: {
       wallet: reserved,
     };
   } catch (error) {
-    await refundEarnPayout(params.userId, params.amount).catch(() => undefined);
+    await refundEarnPayout(params.userId, params.amount, {
+      payoutId,
+      actorId: params.userId,
+      note: "ثبت درخواست واریز ناموفق بود",
+      idempotencyKey: `payout_reversal:${payoutId}`,
+    }).catch(() => undefined);
     if (isMongoDuplicateKey(error)) {
       throw new PayoutError(
         "یک درخواست واریز در انتظار بررسی دارید. تا تعیین وضعیت آن نمی‌توانید درخواست جدید ثبت کنید.",
@@ -210,7 +246,11 @@ export async function reviewEarnPayout(params: {
 
     let wallet;
     try {
-      wallet = await markEarnPayoutPaid(payout.userId, payout.amount);
+      wallet = await markEarnPayoutPaid(payout.userId, payout.amount, {
+        payoutId: payout._id,
+        actorId: params.reviewerId,
+        idempotencyKey: `payout_paid:${payout._id}`,
+      });
     } catch (error) {
       throw mapWalletError(error);
     }
@@ -244,7 +284,12 @@ export async function reviewEarnPayout(params: {
 
   let wallet;
   try {
-    wallet = await refundEarnPayout(payout.userId, payout.amount);
+    wallet = await refundEarnPayout(payout.userId, payout.amount, {
+      payoutId: payout._id,
+      actorId: params.reviewerId,
+      note: params.note?.trim() || "درخواست واریز رد شد",
+      idempotencyKey: `payout_reversal:${payout._id}`,
+    });
   } catch (error) {
     throw mapWalletError(error);
   }

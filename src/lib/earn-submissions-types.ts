@@ -1,5 +1,5 @@
 import type { EarnSubmissionStatus } from "@/lib/earn";
-import type { ViewBonusTier } from "@/lib/types";
+import type { PromptPackItem, ViewBonusTier } from "@/lib/types";
 
 export interface UserCampaignJson {
   id: string;
@@ -11,7 +11,6 @@ export interface UserCampaignJson {
   requiredMentions: string[];
   minVideoLengthSeconds: number;
   mediaKitUrls: string[];
-  basePayoutToman: number;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
   maxSubmissionsPerUser: number;
@@ -21,6 +20,8 @@ export interface UserCampaignJson {
   status: string;
   createdAt: string;
   trending: boolean;
+  toolUrl: string | null;
+  promptPack: PromptPackItem[];
   submittedCount: number;
   remainingSubmissions: number;
 }
@@ -41,6 +42,14 @@ export interface UserSubmissionJson {
   canResubmit: boolean;
   createdAt: string;
   resubmittedAt: string | null;
+  /** When the creator may send day-7 insights (7 days after submitting). */
+  day7OpensAt: string | null;
+  /** The 7 days have passed, whether or not the creator can still send now. */
+  day7InsightsOpen: boolean;
+  canSubmitInsights: boolean;
+  day7ClaimedViews: number | null;
+  day7ProofScreenshotUrl: string | null;
+  day7ProofSubmittedAt: string | null;
 }
 
 export interface AdminSubmissionUserJson {
@@ -56,7 +65,6 @@ export interface AdminSubmissionCampaignJson {
   title: string;
   viewBonusTiers: ViewBonusTier[];
   maxPayoutPerVideoToman: number;
-  basePayoutToman: number;
   spentBudgetToman: number;
   totalBudgetToman: number;
 }
@@ -71,6 +79,9 @@ export interface AdminSubmissionJson {
   basePayoutToman: number;
   bonusToman: number;
   day7Views: number | null;
+  day7ClaimedViews: number | null;
+  day7ProofScreenshotUrl: string | null;
+  day7ProofSubmittedAt: string | null;
   basePaidAt: string | null;
   bonusPaidAt: string | null;
   finalizedAt: string | null;

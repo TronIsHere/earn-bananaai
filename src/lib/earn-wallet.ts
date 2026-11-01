@@ -1,6 +1,7 @@
 import "server-only";
 import type { Types } from "mongoose";
 import { MIN_PAYOUT_TOMAN } from "@/lib/earn";
+import { recordLedgerEntry, type LedgerRef } from "@/lib/earn-ledger";
 import connectDB from "@/lib/mongodb";
 import EarnCampaign from "@/models/earn-campaign";
 import User from "@/models/user";
@@ -27,6 +28,9 @@ export interface CreditEarnWalletParams {
   userId: Types.ObjectId | string;
   campaignId: Types.ObjectId | string;
   amountToman: number;
+  /** Which ledger row a credit becomes. Ignored by `debitEarnWallet`. */
+  kind?: "base" | "bonus";
+  ledger?: LedgerRef;
 }
 
 export interface CreditEarnWalletResult {
@@ -108,6 +112,15 @@ export async function creditEarnWallet(
     throw new EarnWalletError("User not found", "USER_NOT_FOUND");
   }
 
+  await recordLedgerEntry({
+    userId,
+    type: params.kind === "bonus" ? "bonus_credit" : "base_credit",
+    balanceDelta: amountToman,
+    earnedDelta: amountToman,
+    balanceAfter: user.earnWalletBalance,
+    ref: { campaignId, ...params.ledger },
+  });
+
   return {
     balance: user.earnWalletBalance,
     lifetimeEarned: user.earnWalletLifetimeEarned,
@@ -177,6 +190,15 @@ export async function debitEarnWallet(
     });
   }
 
+  await recordLedgerEntry({
+    userId,
+    type: "clawback",
+    balanceDelta: -amountToman,
+    earnedDelta: -amountToman,
+    balanceAfter: user.earnWalletBalance,
+    ref: { campaignId, ...params.ledger },
+  });
+
   return {
     balance: user.earnWalletBalance,
     lifetimeEarned: Math.max(0, user.earnWalletLifetimeEarned),
@@ -206,7 +228,8 @@ function toSnapshot(user: {
 /** Holds funds for a pending manual payout. Fails if below min or not enough balance. */
 export async function reserveEarnPayout(
   userId: Types.ObjectId | string,
-  amountToman: number
+  amountToman: number,
+  ledger?: LedgerRef
 ): Promise<EarnWalletSnapshot> {
   assertPositiveToman(amountToman);
   if (amountToman < MIN_PAYOUT_TOMAN) {
@@ -231,13 +254,22 @@ export async function reserveEarnPayout(
     );
   }
 
+  await recordLedgerEntry({
+    userId,
+    type: "payout_request",
+    balanceDelta: -amountToman,
+    balanceAfter: user.earnWalletBalance,
+    ref: ledger,
+  });
+
   return toSnapshot(user);
 }
 
 /** Returns reserved funds after an admin rejects a pending payout. */
 export async function refundEarnPayout(
   userId: Types.ObjectId | string,
-  amountToman: number
+  amountToman: number,
+  ledger?: LedgerRef
 ): Promise<EarnWalletSnapshot> {
   assertPositiveToman(amountToman);
   await connectDB();
@@ -250,13 +282,23 @@ export async function refundEarnPayout(
   if (!user) {
     throw new EarnWalletError("User not found", "USER_NOT_FOUND");
   }
+
+  await recordLedgerEntry({
+    userId,
+    type: "payout_reversal",
+    balanceDelta: amountToman,
+    balanceAfter: user.earnWalletBalance,
+    ref: ledger,
+  });
+
   return toSnapshot(user);
 }
 
 /** Records a completed manual transfer. Balance was already reserved. */
 export async function markEarnPayoutPaid(
   userId: Types.ObjectId | string,
-  amountToman: number
+  amountToman: number,
+  ledger?: LedgerRef
 ): Promise<EarnWalletSnapshot> {
   assertPositiveToman(amountToman);
   await connectDB();
@@ -269,5 +311,15 @@ export async function markEarnPayoutPaid(
   if (!user) {
     throw new EarnWalletError("User not found", "USER_NOT_FOUND");
   }
+
+  await recordLedgerEntry({
+    userId,
+    type: "payout_paid",
+    balanceDelta: 0,
+    paidOutDelta: amountToman,
+    balanceAfter: user.earnWalletBalance,
+    ref: ledger,
+  });
+
   return toSnapshot(user);
 }

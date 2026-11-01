@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const RAIL = [
   { key: "pending", label: "در صف بررسی", icon: Hourglass },
-  { key: "approved", label: "تأیید و پاداش پایه", icon: Check },
+  { key: "approved", label: "تأیید پست", icon: Check },
   { key: "bonus_pending", label: "بازدید روز ۷", icon: Clock3 },
   { key: "finalized", label: "نهایی شد", icon: Award },
 ] as const;
