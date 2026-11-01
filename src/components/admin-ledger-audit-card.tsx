@@ -1,8 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, ScanSearch } from "lucide-react";
-import { brandGlassCard } from "@/lib/brand";
+import { CircleCheck, ScanSearch, Wrench } from "lucide-react";
+import {
+  AdminEmpty,
+  AdminError,
+  AdminNotice,
+  AdminPageHeader,
+  AdminSpinnerIcon,
+  adminBtn,
+  adminCard,
+} from "@/components/admin-ui";
 import type { WalletReconcileRowJson } from "@/lib/earn-ledger-types";
 import { cn, formatToman } from "@/lib/utils";
 
@@ -60,80 +68,108 @@ export function AdminLedgerAuditCard() {
   };
 
   return (
-    <section className={cn(brandGlassCard, "space-y-3 p-4")}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-white">
-            <ScanSearch className="size-4 text-brand" />
-            تطبیق کیف پول‌ها با دفتر حساب
-          </h3>
-          <p className="mt-1 text-xs text-white/45">
-            مجموع ردیف‌های دفتر هر کاربر باید با موجودی کیف پولش برابر باشد.
-            کیف پول‌های قبل از فعال شدن دفتر یک بار اختلاف نشان می‌دهند.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void check()}
-          disabled={busy !== null}
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/65 hover:bg-white/5 hover:text-white disabled:opacity-50"
-        >
-          {busy === "check" && <Loader2 className="size-3.5 animate-spin" />}
-          بررسی
-        </button>
-      </div>
+    <div className="space-y-5">
+      <AdminPageHeader
+        icon={ScanSearch}
+        title="تطبیق دفتر حساب"
+        description="مجموع ردیف‌های دفتر هر کاربر باید با موجودی کیف پولش برابر باشد."
+        actions={
+          <button
+            type="button"
+            onClick={() => void check()}
+            disabled={busy !== null}
+            className={adminBtn.primary}
+          >
+            <AdminSpinnerIcon busy={busy === "check"} icon={ScanSearch} />
+            {rows ? "بررسی دوباره" : "شروع بررسی"}
+          </button>
+        }
+        guide="کیف پول‌های قبل از فعال شدن دفتر یک بار اختلاف نشان می‌دهند. ثبت تعدیل، کیف پول فعلی را درست فرض می‌کند و برای هر اختلاف یک ردیف «تعدیل حساب» می‌نویسد."
+      />
 
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <AdminError message={error} />}
       {fixedCount != null && (
-        <p className="text-sm text-cash">
+        <AdminNotice>
           {formatToman(fixedCount)} تعدیل ثبت شد و دفتر حساب با کیف پول‌ها یکی شد.
-        </p>
+        </AdminNotice>
+      )}
+
+      {rows == null && fixedCount == null && !error && (
+        <AdminEmpty
+          icon={ScanSearch}
+          title="هنوز بررسی نشده"
+          hint="«شروع بررسی» همه کیف پول‌ها را با دفتر حساب مقایسه می‌کند. چیزی تغییر نمی‌کند."
+        />
       )}
 
       {rows && rows.length === 0 && fixedCount == null && (
-        <p className="text-sm text-cash">
-          همه کیف پول‌ها با دفتر حساب یکی است.
-        </p>
+        <AdminEmpty
+          icon={CircleCheck}
+          title="همه کیف پول‌ها با دفتر حساب یکی است"
+        />
       )}
 
       {rows && rows.length > 0 && (
-        <div className="space-y-2">
-          <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
+        <section className={cn(adminCard, "overflow-hidden")}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/6 px-4 py-3">
+            <h2 className="text-sm font-semibold text-white">
+              {formatToman(rows.length)} کیف پول با اختلاف
+            </h2>
+          </div>
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 border-b border-white/6 px-4 py-2 text-[11px] text-white/35">
+            <span>سازنده</span>
+            <span>موجودی</span>
+            <span>درآمد</span>
+            <span>واریز</span>
+          </div>
+          <ul className="divide-y divide-white/6">
             {rows.map((row) => (
               <li
                 key={row.userId}
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs"
+                className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 px-4 py-2.5 text-xs"
               >
-                <span className="text-white/80">
+                <span className="min-w-0 truncate text-white/80">
                   {row.name || "کاربر"}
                   <span className="mr-2 text-white/35" dir="ltr">
                     {row.mobileNumber}
                   </span>
                 </span>
-                <span className="text-white/55">
-                  موجودی {signed(row.drift.balance)} · درآمد{" "}
-                  {signed(row.drift.lifetimeEarned)} · واریز{" "}
-                  {signed(row.drift.lifetimePaidOut)}
-                </span>
+                <Drift value={row.drift.balance} />
+                <Drift value={row.drift.lifetimeEarned} />
+                <Drift value={row.drift.lifetimePaidOut} />
               </li>
             ))}
           </ul>
-          <p className="text-xs text-white/45">
-            ثبت تعدیل، کیف پول فعلی را درست فرض می‌کند و برای هر اختلاف یک ردیف
-            «تعدیل حساب» می‌نویسد. بهتر است وقتی پولی در حال جابه‌جایی نیست انجام
-            شود.
-          </p>
-          <button
-            type="button"
-            onClick={() => void fix()}
-            disabled={busy !== null}
-            className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
-          >
-            {busy === "fix" && <Loader2 className="size-4 animate-spin" />}
-            ثبت تعدیل برای {formatToman(rows.length)} کیف پول
-          </button>
-        </div>
+          <div className="space-y-2 border-t border-white/6 bg-black/20 px-4 py-3">
+            <p className="text-xs text-white/45">
+              بهتر است وقتی پولی در حال جابه‌جایی نیست انجام شود.
+            </p>
+            <button
+              type="button"
+              onClick={() => void fix()}
+              disabled={busy !== null}
+              className={adminBtn.warn}
+            >
+              <AdminSpinnerIcon busy={busy === "fix"} icon={Wrench} />
+              ثبت تعدیل برای {formatToman(rows.length)} کیف پول
+            </button>
+          </div>
+        </section>
       )}
-    </section>
+    </div>
+  );
+}
+
+function Drift({ value }: { value: number }) {
+  return (
+    <span
+      className={cn(
+        "tabular-nums",
+        value === 0 ? "text-white/30" : value > 0 ? "text-cash" : "text-rose-300"
+      )}
+      dir="ltr"
+    >
+      {signed(value)}
+    </span>
   );
 }

@@ -1,18 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BarChart3, Eye, Send, UserRound, Users } from "lucide-react";
 import {
-  BarChart3,
-  Eye,
-  Loader2,
-  RefreshCw,
-  Send,
-  UserRound,
-  Users,
-} from "lucide-react";
-import { SectionBadge } from "@/components/section-badge";
+  AdminError,
+  AdminPageHeader,
+  AdminRefreshButton,
+  adminCard,
+} from "@/components/admin-ui";
 import { StatCard } from "@/components/stat-card";
-import { brandCtaGhost, brandGlassCard } from "@/lib/brand";
+import { brandGlassCard } from "@/lib/brand";
 import type { AnalyticsSummary } from "@/lib/analytics-types";
 import { cn, formatDate, formatToman } from "@/lib/utils";
 
@@ -44,7 +41,8 @@ export function AdminAnalyticsPanel() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const maxDailyViews = useMemo(() => {
@@ -52,66 +50,39 @@ export function AdminAnalyticsPanel() {
     return Math.max(1, ...data.daily.map((row) => row.views));
   }, [data]);
 
-  if (loading && !data) {
+  const header = (
+    <AdminPageHeader
+      icon={BarChart3}
+      title="آمار بازدید سایت"
+      description="بازدید کل و بازدیدکننده یکتا از ورود تا داشبورد. پنل مدیریت شمرده نمی‌شود."
+      actions={<AdminRefreshButton onClick={() => void load()} loading={loading} />}
+    />
+  );
+
+  if (!data) {
     return (
-      <div className="flex justify-center py-16">
-        <Loader2 className="size-6 animate-spin text-brand" />
+      <div className="space-y-5">
+        {header}
+        {error ? (
+          <AdminError message={error} onRetry={() => void load()} />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className={cn(adminCard, "h-28 animate-pulse")} />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
-
-  if (error && !data) {
-    return (
-      <div className="space-y-3">
-        <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-          {error}
-        </p>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className={cn(brandCtaGhost, "px-4 py-2 text-sm")}
-        >
-          <RefreshCw className="size-4" />
-          تلاش دوباره
-        </button>
-      </div>
-    );
-  }
-
-  if (!data) return null;
 
   const { totals } = data;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <SectionBadge icon={BarChart3}>بازدید سایت</SectionBadge>
-          <p className="mt-2 text-sm text-white/50">
-            بازدید کل و بازدیدکننده یکتا از ورود تا داشبورد. پنل مدیریت شمرده
-            نمی‌شود.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          className={cn(brandCtaGhost, "px-3 py-2 text-sm disabled:opacity-50")}
-        >
-          {loading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="size-4" />
-          )}
-          به‌روزرسانی
-        </button>
-      </div>
+      {header}
 
-      {error && (
-        <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-          {error}
-        </p>
-      )}
+      {error && <AdminError message={error} onRetry={() => void load()} />}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -168,7 +139,7 @@ export function AdminAnalyticsPanel() {
                   {formatToman(row.views)}
                 </span>
                 <div
-                  className="w-full max-w-8 rounded-t-md bg-brand/80"
+                  className="w-full max-w-8 rounded-t-md bg-brand/80 transition-colors hover:bg-brand"
                   style={{ height }}
                   title={`${row.day}: ${row.views} بازدید، ${row.uniqueVisitors} یکتا`}
                 />
