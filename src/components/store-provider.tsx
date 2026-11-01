@@ -44,6 +44,8 @@ function profileFromUser(user: {
   verificationRequestedAt?: string | null;
   bankSheba?: string | null;
   bankAccountHolder?: string | null;
+  campaignSmsEligible?: boolean;
+  campaignSmsOptIn?: boolean;
 }): Partial<Profile> {
   return {
     id: user.id,
@@ -59,6 +61,8 @@ function profileFromUser(user: {
     verificationRequestedAt: user.verificationRequestedAt ?? null,
     bankSheba: user.bankSheba ?? null,
     bankAccountHolder: user.bankAccountHolder ?? null,
+    campaignSmsEligible: Boolean(user.campaignSmsEligible),
+    campaignSmsOptIn: Boolean(user.campaignSmsOptIn),
   };
 }
 

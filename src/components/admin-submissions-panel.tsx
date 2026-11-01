@@ -1,38 +1,56 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Check, Inbox, RotateCcw, X } from "lucide-react";
+import { useAdminRefresh } from "@/components/admin-shell";
 import {
-  Check,
-  ExternalLink,
-  Inbox,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
-  X,
-} from "lucide-react";
-import { SectionBadge } from "@/components/section-badge";
+  AdminEmpty,
+  AdminError,
+  AdminExternalLink,
+  AdminLoading,
+  AdminNotice,
+  AdminPageHeader,
+  AdminPerson,
+  AdminPill,
+  AdminRefreshButton,
+  AdminSegmented,
+  AdminSpinnerIcon,
+  AdminStat,
+  adminBtn,
+  adminCard,
+  adminField,
+} from "@/components/admin-ui";
+import { CreatorLevelChip } from "@/components/creator-level";
 import {
   ReviewSlaBadge,
-  ReviewSlaQueueBanner,
   reviewSlaCardClass,
+  useNow,
 } from "@/components/review-sla";
 import {
+  creatorLevelById,
+  creatorMaxPayoutPerVideoToman,
   FIXABLE_REJECT_REASONS,
   MAX_SUBMISSION_RESUBMITS,
   MIN_PAID_VIEWS,
+  reviewSlaSnapshot,
 } from "@/lib/earn";
 import type { AdminSubmissionJson } from "@/lib/earn-submissions-types";
-import {
-  brandCta,
-  brandGlassCard,
-  formFocus,
-} from "@/lib/brand";
+import { formFocus } from "@/lib/brand";
 import { cn, formatDate, formatToman } from "@/lib/utils";
+
+type QueueFilter = "all" | "overdue" | "resubmitted";
+
+function slaStart(sub: AdminSubmissionJson) {
+  return sub.resubmittedAt ?? sub.createdAt;
+}
 
 export function AdminSubmissionsPanel() {
   const [submissions, setSubmissions] = useState<AdminSubmissionJson[]>([]);
+  const [filter, setFilter] = useState<QueueFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const refreshOverview = useAdminRefresh();
+  const now = useNow();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,55 +80,78 @@ export function AdminSubmissionsPanel() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  const isOverdue = (sub: AdminSubmissionJson) =>
+    reviewSlaSnapshot(slaStart(sub), now, sub.reviewSlaHours)?.tone === "overdue";
+  const isResubmitted = (sub: AdminSubmissionJson) =>
+    (sub.resubmitCount ?? 0) >= MAX_SUBMISSION_RESUBMITS;
+
+  const overdueCount = submissions.filter(isOverdue).length;
+  const resubmittedCount = submissions.filter(isResubmitted).length;
+  const visible = submissions.filter((sub) =>
+    filter === "overdue"
+      ? isOverdue(sub)
+      : filter === "resubmitted"
+        ? isResubmitted(sub)
+        : true
+  );
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <SectionBadge icon={Inbox}>صف بررسی</SectionBadge>
-          <h2 className="mt-2 text-xl font-bold text-white">ارسال‌های در انتظار</h2>
-          <p className="mt-1 max-w-2xl text-sm text-white/55">
-            SLA بررسی حداکثر ۴۸ ساعت است. قدیمی‌ترین ارسال‌ها بالاترند. برای
-            ایراد قابل اصلاح (مثل هشتگ جا مانده) رد با امکان یک‌بار ارسال مجدد
-            بزنید تا سازنده کارش را از دست ندهد. اگر تأیید را اشتباه زدید، همان
-            کارت یا تب بازدید روز ۷ دکمه برگشت تأیید دارد.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-2 text-sm text-white/60 hover:bg-white/5 hover:text-white"
-        >
-          <RefreshCw className="size-4" />
-          نوسازی
-        </button>
-      </div>
+    <div className="space-y-5">
+      <AdminPageHeader
+        icon={Inbox}
+        title="بررسی ارسال‌ها"
+        description={
+          submissions.length > 0
+            ? `${formatToman(submissions.length)} ریل در صف · نزدیک‌ترین مهلت بالاتر است`
+            : "ریل‌های ارسالی سازنده‌ها برای تأیید"
+        }
+        actions={<AdminRefreshButton onClick={() => void load()} loading={loading} />}
+        guide={
+          <>
+            SLA بررسی حداکثر ۴۸ ساعت است و سازنده‌های حرفه‌ای و ستاره ۲۴ ساعته
+            بررسی می‌شوند. برای ایراد قابل اصلاح (مثل هشتگ جا مانده) رد با
+            امکان یک‌بار ارسال مجدد بزنید تا سازنده کارش را از دست ندهد. اگر
+            تأیید را اشتباه زدید، همان کارت یا بخش بازدید روز ۷ دکمه برگشت تأیید
+            دارد.
+          </>
+        }
+      />
+
+      {submissions.length > 0 && (
+        <AdminSegmented
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { id: "all", label: "همه", count: submissions.length },
+            { id: "overdue", label: "از مهلت گذشته", count: overdueCount },
+            { id: "resubmitted", label: "ارسال مجدد", count: resubmittedCount },
+          ]}
+        />
+      )}
 
       {loading ? (
-        <div className="flex min-h-[30vh] items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-brand" />
-        </div>
+        <AdminLoading />
       ) : error ? (
-        <div className="rounded-2xl border border-rose-500/25 bg-rose-950/20 px-4 py-6 text-sm text-rose-200">
-          {error}
-        </div>
+        <AdminError message={error} onRetry={() => void load()} />
       ) : submissions.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-sm text-white/45">
-          ارسالی در صف بررسی نیست.
-        </div>
+        <AdminEmpty
+          icon={Inbox}
+          title="صف بررسی خالی است"
+          hint="ریل‌های جدید که سازنده‌ها بفرستند اینجا می‌آیند."
+        />
+      ) : visible.length === 0 ? (
+        <AdminEmpty icon={Inbox} title="موردی با این فیلتر نیست" />
       ) : (
         <div className="space-y-3">
-          <ReviewSlaQueueBanner
-            startedAts={submissions.map(
-              (sub) => sub.resubmittedAt ?? sub.createdAt
-            )}
-          />
-          {submissions.map((sub) => (
+          {visible.map((sub) => (
             <ReviewCard
               key={sub.id}
               submission={sub}
-              onDone={(id) =>
-                setSubmissions((prev) => prev.filter((row) => row.id !== id))
-              }
+              onDone={(id) => {
+                setSubmissions((prev) => prev.filter((row) => row.id !== id));
+                refreshOverview();
+              }}
+              onChanged={refreshOverview}
             />
           ))}
         </div>
@@ -122,9 +163,11 @@ export function AdminSubmissionsPanel() {
 function ReviewCard({
   submission,
   onDone,
+  onChanged,
 }: {
   submission: AdminSubmissionJson;
   onDone: (id: string) => void;
+  onChanged: () => void;
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -139,10 +182,12 @@ function ReviewCard({
   const [justApproved, setJustApproved] = useState(false);
   const [revokedNotice, setRevokedNotice] = useState<string | null>(null);
 
-  const creatorName = submission.user
-    ? `${submission.user.firstName} ${submission.user.lastName}`.trim()
-    : "کاربر";
-  const maxPayout = submission.campaign?.maxPayoutPerVideoToman ?? null;
+  const maxPayout = submission.campaign
+    ? creatorMaxPayoutPerVideoToman(
+        submission.campaign.maxPayoutPerVideoToman,
+        creatorLevelById(submission.user?.creatorLevel)
+      )
+    : null;
   const willAllowResubmit = allowResubmit && !alreadyResubmitted;
 
   const review = async (decision: "approve" | "reject" | "revoke") => {
@@ -174,6 +219,7 @@ function ReviewCard({
         setError(data.error || "بررسی ناموفق بود");
         return;
       }
+      onChanged();
       if (decision === "revoke") {
         setJustApproved(false);
         setDone(null);
@@ -203,230 +249,231 @@ function ReviewCard({
   return (
     <article
       className={cn(
-        brandGlassCard,
-        "p-4 sm:p-5",
-        reviewSlaCardClass(submission.resubmittedAt ?? submission.createdAt)
+        adminCard,
+        "overflow-hidden",
+        reviewSlaCardClass(slaStart(submission), submission.reviewSlaHours),
+        done && "opacity-80"
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-[minmax(0,1fr)_200px]">
+        <div className="min-w-0 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-white">
+            <h3 className="font-bold text-white">
               {submission.campaign?.title || "کمپین"}
             </h3>
             {alreadyResubmitted && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-200">
-                <RotateCcw className="size-3" />
+              <AdminPill tone="warn" icon={RotateCcw}>
                 ارسال مجدد
-              </span>
+              </AdminPill>
             )}
-            <ReviewSlaBadge startedAt={submission.resubmittedAt ?? submission.createdAt} />
+            <ReviewSlaBadge
+              startedAt={slaStart(submission)}
+              slaHours={submission.reviewSlaHours}
+            />
           </div>
-          <p className="mt-1 text-sm text-white/55">
-            {creatorName}
-            {submission.user?.instagramHandle
-              ? ` · @${submission.user.instagramHandle}`
-              : ""}
-          </p>
-          <div className="mt-1 text-xs text-white/40">
-            {formatDate(submission.createdAt)}
-            {submission.user?.mobileNumber
-              ? ` · ${submission.user.mobileNumber}`
-              : ""}
+
+          <AdminPerson
+            firstName={submission.user?.firstName}
+            lastName={submission.user?.lastName}
+            badge={
+              submission.user && (
+                <CreatorLevelChip level={submission.user.creatorLevel} />
+              )
+            }
+            meta={
+              <span dir="ltr">
+                {submission.user?.instagramHandle
+                  ? `@${submission.user.instagramHandle}`
+                  : ""}
+                {submission.user?.mobileNumber
+                  ? ` · ${submission.user.mobileNumber}`
+                  : ""}
+              </span>
+            }
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <AdminExternalLink href={submission.instagramPostUrl} primary>
+              مشاهده پست
+            </AdminExternalLink>
+            {submission.proofScreenshotUrl && (
+              <AdminExternalLink href={submission.proofScreenshotUrl}>
+                اسکرین‌شات کامل
+              </AdminExternalLink>
+            )}
           </div>
-        </div>
-        {maxPayout != null && (
-          <div className="text-left text-xs text-white/45">
-            سقف هر ویدیو {formatToman(maxPayout)} تومان
-          </div>
-        )}
-      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <a
-          href={submission.instagramPostUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-brand hover:text-brand-soft"
-        >
-          مشاهده پست
-          <ExternalLink className="size-3.5" />
-        </a>
-        {submission.proofScreenshotUrl && (
-          <a
-            href={submission.proofScreenshotUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-white/55 hover:text-white"
-          >
-            اسکرین‌شات
-            <ExternalLink className="size-3.5" />
-          </a>
-        )}
-      </div>
-
-      {submission.proofScreenshotUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={submission.proofScreenshotUrl}
-          alt="اسکرین‌شات اثبات"
-          className="mt-3 max-h-64 rounded-xl border border-white/10 object-contain"
-        />
-      )}
-
-      {submission.reviewerNote && (
-        <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-sm text-amber-100/90">
-          {alreadyResubmitted ? "درخواست اصلاح قبلی: " : ""}
-          {submission.reviewerNote}
-        </p>
-      )}
-
-      {revokedNotice && !justApproved && !done && (
-        <p className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
-          {revokedNotice}
-        </p>
-      )}
-
-      {done ? (
-        <div className="mt-4 space-y-3">
-          <p className="rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200">
-            {done}
-          </p>
-          {justApproved && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void review("revoke")}
-                disabled={saving !== null}
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/15 disabled:opacity-50"
-              >
-                {saving === "revoke" ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="size-4" />
-                )}
-                برگشت تأیید
-              </button>
-              <button
-                type="button"
-                onClick={() => onDone(submission.id)}
-                disabled={saving !== null}
-                className="rounded-2xl border border-white/10 px-4 py-2.5 text-sm text-white/60 hover:bg-white/5 disabled:opacity-50"
-              >
-                بستن
-              </button>
-            </div>
+          {submission.reviewerNote && (
+            <AdminNotice tone="warn">
+              {alreadyResubmitted ? "درخواست اصلاح قبلی: " : ""}
+              {submission.reviewerNote}
+            </AdminNotice>
           )}
         </div>
-      ) : (
-        <div className="mt-4 space-y-3">
-          {rejecting && (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                {FIXABLE_REJECT_REASONS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setReason(preset)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
-                      reason === preset
-                        ? "border-brand/40 bg-brand/15 text-brand"
-                        : "border-white/10 text-white/55 hover:border-white/20 hover:text-white"
-                    )}
-                  >
-                    {preset}
-                  </button>
-                ))}
+
+        <aside className="flex flex-row gap-3 md:flex-col">
+          {submission.proofScreenshotUrl && (
+            <a
+              href={submission.proofScreenshotUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block w-28 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/40 md:w-full"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={submission.proofScreenshotUrl}
+                alt="اسکرین‌شات اثبات"
+                className="max-h-56 w-full object-contain"
+              />
+            </a>
+          )}
+          <div className="grid flex-1 grid-cols-1 gap-2 rounded-xl border border-white/6 bg-black/20 p-3">
+            {maxPayout != null && (
+              <AdminStat
+                label="سقف هر ویدیو"
+                value={`${formatToman(maxPayout)} تومان`}
+                tone="brand"
+              />
+            )}
+            <AdminStat
+              label="زمان ارسال"
+              value={formatDate(submission.createdAt)}
+              tone="muted"
+            />
+          </div>
+        </aside>
+      </div>
+
+      <div className="space-y-3 border-t border-white/6 bg-black/20 px-4 py-3 sm:px-5">
+        {revokedNotice && !justApproved && !done && (
+          <AdminNotice>{revokedNotice}</AdminNotice>
+        )}
+
+        {done ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <AdminNotice>{done}</AdminNotice>
+            {justApproved && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void review("revoke")}
+                  disabled={saving !== null}
+                  className={adminBtn.warn}
+                >
+                  <AdminSpinnerIcon busy={saving === "revoke"} icon={RotateCcw} />
+                  برگشت تأیید
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDone(submission.id)}
+                  disabled={saving !== null}
+                  className={adminBtn.ghost}
+                >
+                  بستن
+                </button>
               </div>
-              <label className="block">
-                <span className="mb-1.5 block text-xs text-white/45">
-                  دلیل رد
-                </span>
+            )}
+          </div>
+        ) : (
+          <>
+            {rejecting && (
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1.5 text-xs text-white/45">دلیل‌های آماده</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {FIXABLE_REJECT_REASONS.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setReason(preset)}
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1 text-[11px] transition-colors",
+                          reason === preset
+                            ? "border-brand/40 bg-brand/15 text-brand"
+                            : "border-white/10 text-white/55 hover:border-white/20 hover:text-white"
+                        )}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <textarea
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
-                  placeholder="مثلا هشتگ الزامی رعایت نشده"
-                  className={cn(
-                    "min-h-20 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder:text-white/35",
-                    formFocus
-                  )}
+                  placeholder="دلیل رد، مثلا هشتگ الزامی رعایت نشده"
+                  aria-label="دلیل رد"
+                  className={cn(adminField, formFocus, "min-h-20")}
                 />
-              </label>
-              {alreadyResubmitted ? (
-                <p className="text-xs text-white/45">
-                  این ارسال یک‌بار اصلاح شده؛ رد بعدی نهایی است.
-                </p>
+                {alreadyResubmitted ? (
+                  <p className="text-xs text-white/45">
+                    این ارسال یک‌بار اصلاح شده؛ رد بعدی نهایی است.
+                  </p>
+                ) : (
+                  <label className="flex items-start gap-2 text-sm text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={allowResubmit}
+                      onChange={(event) => setAllowResubmit(event.target.checked)}
+                      className="mt-0.5 size-4 rounded border-white/20 bg-black/30 accent-brand"
+                    />
+                    <span>
+                      اجازه یک‌بار ارسال مجدد (ایراد قابل اصلاح مثل هشتگ جا مانده)
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {rejecting ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void review("reject")}
+                    disabled={saving !== null}
+                    className={adminBtn.danger}
+                  >
+                    <AdminSpinnerIcon busy={saving === "reject"} icon={X} />
+                    {willAllowResubmit ? "رد با امکان اصلاح" : "رد نهایی"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRejecting(false);
+                      setError(null);
+                    }}
+                    className={adminBtn.ghost}
+                  >
+                    انصراف
+                  </button>
+                </>
               ) : (
-                <label className="flex items-start gap-2 text-sm text-white/70">
-                  <input
-                    type="checkbox"
-                    checked={allowResubmit}
-                    onChange={(event) => setAllowResubmit(event.target.checked)}
-                    className="mt-0.5 size-4 rounded border-white/20 bg-black/30 accent-brand"
-                  />
-                  <span>
-                    اجازه یک‌بار ارسال مجدد (ایراد قابل اصلاح مثل هشتگ جا مانده)
-                  </span>
-                </label>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void review("approve")}
+                    disabled={saving !== null}
+                    className={adminBtn.primary}
+                  >
+                    <AdminSpinnerIcon busy={saving === "approve"} icon={Check} />
+                    تأیید پست
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRejecting(true)}
+                    className={adminBtn.danger}
+                  >
+                    <X className="size-4" />
+                    رد کردن
+                  </button>
+                </>
               )}
             </div>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void review("approve")}
-              disabled={saving !== null}
-              className={cn(brandCta, "px-4 py-2.5 text-sm disabled:opacity-50")}
-            >
-              {saving === "approve" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              تأیید پست
-            </button>
-            {rejecting ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void review("reject")}
-                  disabled={saving !== null}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-200 hover:bg-rose-500/15 disabled:opacity-50"
-                >
-                  {saving === "reject" ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <X className="size-4" />
-                  )}
-                  {willAllowResubmit ? "رد با امکان اصلاح" : "رد نهایی"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRejecting(false);
-                    setError(null);
-                  }}
-                  className="rounded-2xl border border-white/10 px-4 py-2.5 text-sm text-white/60 hover:bg-white/5"
-                >
-                  انصراف
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setRejecting(true)}
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-500/30 px-4 py-2.5 text-sm text-rose-200 hover:bg-rose-500/10"
-              >
-                <X className="size-4" />
-                رد کردن
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+          </>
+        )}
 
-      {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
+        {error && <p className="text-sm text-rose-300">{error}</p>}
+      </div>
     </article>
   );
 }

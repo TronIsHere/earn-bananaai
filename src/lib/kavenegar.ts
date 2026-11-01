@@ -94,3 +94,58 @@ export function toKavenegarReceptor(phone: string): string {
   if (cleaned.startsWith("00")) return cleaned;
   return `00${cleaned}`;
 }
+
+export interface SendSmsParams {
+  /** One mobile, or several joined with commas (Kavenegar caps a call at 200). */
+  receptor: string;
+  message: string;
+  sender?: string;
+}
+
+/**
+ * Sends a plain SMS from the KAVENEGAR_SENDER line via sms/send. Unlike
+ * verify/lookup it needs no approved template, but recipients who block
+ * promotional SMS may not receive it (status 14).
+ */
+export async function sendSmsWithKavenegar(
+  params: SendSmsParams
+): Promise<KavenegarResponse> {
+  const apiKey = process.env.KAVENEGAR_API_KEY;
+  const sender = params.sender || process.env.KAVENEGAR_SENDER;
+
+  if (!apiKey) throw new Error("KAVENEGAR_API_KEY is not set");
+
+  const body = new URLSearchParams({
+    receptor: params.receptor
+      .split(",")
+      .map((phone) => toKavenegarReceptor(phone))
+      .join(","),
+    message: params.message,
+  });
+  if (sender) body.set("sender", sender);
+
+  const response = await fetch(
+    `https://api.kavenegar.com/v1/${apiKey}/sms/send.json`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    }
+  );
+
+  // Kavenegar mirrors return.status in the HTTP status, so read the body
+  // either way to surface its error message.
+  const data = (await response.json().catch(() => null)) as
+    | KavenegarResponse
+    | null;
+  if (!data || data.return?.status !== 200) {
+    throw new Error(
+      `Kavenegar rejected SMS: ${data?.return?.message ?? response.statusText}`
+    );
+  }
+
+  return data;
+}

@@ -48,6 +48,8 @@ export function publicUser(user: {
   earnWalletLifetimePaidOut?: number;
   earnBankSheba?: string | null;
   earnBankAccountHolder?: string | null;
+  earnCampaignSmsEligible?: boolean;
+  earnCampaignSmsOptIn?: boolean;
 }) {
   return {
     id: user._id.toString(),
@@ -67,6 +69,8 @@ export function publicUser(user: {
         : null,
     bankSheba: user.earnBankSheba ?? null,
     bankAccountHolder: user.earnBankAccountHolder ?? null,
+    campaignSmsEligible: Boolean(user.earnCampaignSmsEligible),
+    campaignSmsOptIn: Boolean(user.earnCampaignSmsOptIn),
     earnWallet: {
       available: user.earnWalletBalance ?? 0,
       lifetimeEarned: user.earnWalletLifetimeEarned ?? 0,

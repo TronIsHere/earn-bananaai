@@ -11,14 +11,23 @@ import {
   canSubmitDay7Insights,
   day7InsightsOpensAt,
   DAY7_ELIGIBLE_STATUSES,
+  EARLY_ACCESS_LEVEL,
+  isCampaignLockedForLevel,
   isCampaignOpen,
   MAX_SUBMISSION_RESUBMITS,
+  REVIEW_SLA_HOURS,
+  reviewDueAt,
   type EarnSubmissionStatus,
 } from "@/lib/earn";
+import {
+  getCreatorLevel,
+  type CreatorLevelJson,
+} from "@/lib/earn-creator-level";
 import {
   activeCampaignMongoFilter,
   serializeCampaign,
 } from "@/lib/earn-campaigns";
+import { listShowcaseByCampaign } from "@/lib/earn-showcase";
 import type {
   UserCampaignJson,
   UserSubmissionJson,
@@ -32,6 +41,7 @@ export type SubmissionErrorCode =
   | "UNVERIFIED"
   | "CAMPAIGN_NOT_FOUND"
   | "CAMPAIGN_INACTIVE"
+  | "EARLY_ACCESS"
   | "INVALID_PROOF"
   | "DUPLICATE_URL"
   | "CAP_REACHED"
@@ -116,6 +126,7 @@ export function serializeUserSubmission(doc: SubmissionLean): UserSubmissionJson
     canResubmit: canResubmitSubmission(doc),
     createdAt: toIso(doc.createdAt) ?? new Date().toISOString(),
     resubmittedAt: toIso(doc.resubmittedAt),
+    reviewSlaHours: doc.reviewSlaHours ?? REVIEW_SLA_HOURS,
     day7OpensAt: day7InsightsOpensAt(doc.createdAt)?.toISOString() ?? null,
     day7InsightsOpen:
       (day7InsightsOpensAt(doc.createdAt)?.getTime() ?? Infinity) <= Date.now(),
@@ -123,6 +134,8 @@ export function serializeUserSubmission(doc: SubmissionLean): UserSubmissionJson
     day7ClaimedViews: doc.day7ClaimedViews ?? null,
     day7ProofScreenshotUrl: doc.day7ProofScreenshotUrl ?? null,
     day7ProofSubmittedAt: toIso(doc.day7ProofSubmittedAt),
+    reviewedAt: toIso(doc.reviewedAt),
+    finalizedAt: toIso(doc.finalizedAt),
   };
 }
 
@@ -134,6 +147,7 @@ export async function listUserSubmissionsPage(userId: string): Promise<{
     status: string;
     handle: string | null;
   };
+  creatorLevel: CreatorLevelJson;
 }> {
   await connectDB();
 
@@ -146,7 +160,7 @@ export async function listUserSubmissionsPage(userId: string): Promise<{
 
   const now = new Date();
   const userObjectId = new mongoose.Types.ObjectId(userId);
-  const [submissions, submissionCount, campaigns, counts] = await Promise.all([
+  const [submissions, submissionCount, campaigns, counts, creator] = await Promise.all([
     EarnSubmission.find({ userId })
       .sort({ createdAt: -1 })
       .limit(100)
@@ -165,8 +179,12 @@ export async function listUserSubmissionsPage(userId: string): Promise<{
       },
       { $group: { _id: "$campaignId", count: { $sum: 1 } } },
     ]),
+    getCreatorLevel(userObjectId),
   ]);
 
+  const showcase = await listShowcaseByCampaign(
+    campaigns.map((campaign) => campaign._id)
+  );
   const countByCampaign = new Map(
     counts.map((row) => [row._id.toString(), row.count])
   );
@@ -179,6 +197,7 @@ export async function listUserSubmissionsPage(userId: string): Promise<{
       const serialized = serializeCampaign(campaign);
       return {
         ...serialized,
+        showcase: showcase.get(campaign._id.toString()) ?? [],
         submittedCount,
         remainingSubmissions: Math.max(
           0,
@@ -190,6 +209,7 @@ export async function listUserSubmissionsPage(userId: string): Promise<{
       status: user.earnVerificationStatus,
       handle: user.earnInstagramHandle,
     },
+    creatorLevel: { id: creator.level.id, paidReels: creator.paidReels },
   };
 }
 
@@ -234,6 +254,15 @@ export async function createEarnSubmission(params: {
     );
   }
 
+  const { level } = await getCreatorLevel(userId);
+  if (isCampaignLockedForLevel(campaign, level)) {
+    throw new SubmissionError(
+      `این کمپین فعلاً فقط برای سطح ${EARLY_ACCESS_LEVEL.label} باز است و از ${formatDate(campaign.earlyAccessUntil?.toISOString())} برای همه باز می‌شود.`,
+      "EARLY_ACCESS",
+      403
+    );
+  }
+
   const duplicate = await EarnSubmission.findOne({
     instagramPostUrl,
     status: { $ne: "rejected" },
@@ -266,6 +295,9 @@ export async function createEarnSubmission(params: {
       instagramPostUrl,
       proofScreenshotUrl,
       status: "pending",
+      creatorLevel: level.id,
+      reviewSlaHours: level.reviewSlaHours,
+      reviewDueAt: reviewDueAt(new Date(), level.reviewSlaHours),
       basePayoutToman: 0,
       bonusToman: 0,
     });
@@ -576,6 +608,10 @@ export async function resubmitEarnSubmission(params: {
           reviewedBy: null,
           reviewedAt: null,
           resubmittedAt: new Date(),
+          reviewDueAt: reviewDueAt(
+            new Date(),
+            submission.reviewSlaHours ?? REVIEW_SLA_HOURS
+          ),
         },
         $inc: { resubmitCount: 1 },
       },

@@ -28,6 +28,10 @@ export interface IUser {
   earnBankSheba: string | null;
   earnBankAccountHolder: string | null;
   earnBankUpdatedAt: Date | null;
+  /** Admin-marked creators who may ask for a new-campaign SMS. */
+  earnCampaignSmsEligible: boolean;
+  /** One-shot: cleared once the "a campaign opened" SMS goes out. */
+  earnCampaignSmsOptIn: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -138,6 +142,14 @@ const UserSchema = new Schema<IUser>(
       type: Date,
       default: null,
     },
+    earnCampaignSmsEligible: {
+      type: Boolean,
+      default: false,
+    },
+    earnCampaignSmsOptIn: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
@@ -146,6 +158,10 @@ UserSchema.index({ createdAt: -1 });
 UserSchema.index({ earnWalletBalance: -1 });
 UserSchema.index({ earnVerificationStatus: 1, earnVerificationRequestedAt: 1 });
 UserSchema.index({ earnVerificationStatus: 1, updatedAt: -1 });
+UserSchema.index(
+  { earnCampaignSmsOptIn: 1 },
+  { partialFilterExpression: { earnCampaignSmsOptIn: true } }
+);
 UserSchema.index(
   { earnInstagramHandle: 1 },
   {
@@ -158,7 +174,7 @@ UserSchema.index(
 
 // Dev HMR keeps the first compiled schema; drop it when fields were added.
 const existingModel = mongoose.models.User as Model<IUser> | undefined;
-if (existingModel && !existingModel.schema.path("earnBankSheba")) {
+if (existingModel && !existingModel.schema.path("earnCampaignSmsOptIn")) {
   mongoose.deleteModel("User");
 }
 

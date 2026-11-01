@@ -22,6 +22,8 @@ export const emptyProfile: Profile = {
   verificationRequestedAt: null,
   bankSheba: null,
   bankAccountHolder: null,
+  campaignSmsEligible: false,
+  campaignSmsOptIn: false,
 };
 
 function storageKey(userId: string) {

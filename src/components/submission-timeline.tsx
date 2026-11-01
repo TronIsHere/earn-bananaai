@@ -7,7 +7,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { EarnSubmissionStatus } from "@/lib/earn";
-import { cn } from "@/lib/utils";
+import { cn, formatDayMonth } from "@/lib/utils";
 
 /**
  * Where a submission sits in the pay flow. The happy path is a four-stop rail;
@@ -82,11 +82,16 @@ export function SubmissionStatusBadge({
   );
 }
 
+export type TimelineStop = (typeof RAIL)[number]["key"];
+
 export function SubmissionTimeline({
   status,
+  dates,
   className,
 }: {
   status: EarnSubmissionStatus;
+  /** Optional ISO date under each stop: when it happened, or when it opens. */
+  dates?: Partial<Record<TimelineStop, string | null>>;
   className?: string;
 }) {
   const index = railIndex(status);
@@ -121,6 +126,7 @@ export function SubmissionTimeline({
         const done = i < index;
         const current = i === index;
         const Icon = stop.icon;
+        const date = dates?.[stop.key];
         return (
           <li key={stop.key} className="flex flex-1 items-center last:flex-none">
             <div className="flex flex-col items-center gap-1.5">
@@ -147,11 +153,24 @@ export function SubmissionTimeline({
               >
                 {stop.label}
               </span>
+              {date ? (
+                <span
+                  className={cn(
+                    "-mt-0.5 whitespace-nowrap text-[10px] leading-none",
+                    done ? "text-white/40" : "text-white/30",
+                    current && "text-brand/70"
+                  )}
+                >
+                  {done || stop.key === "finalized" ? "" : "از "}
+                  {formatDayMonth(date)}
+                </span>
+              ) : null}
             </div>
             {i < RAIL.length - 1 && (
               <span
                 className={cn(
-                  "mx-1.5 mb-5 h-px flex-1 rounded-full",
+                  "mx-1.5 h-px flex-1 rounded-full",
+                  dates ? "mb-9" : "mb-5",
                   i < index ? "bg-brand" : "bg-white/10"
                 )}
                 aria-hidden

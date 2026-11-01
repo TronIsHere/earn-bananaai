@@ -179,6 +179,11 @@ export const submitDay7InsightsSchema = z.object({
   screenshotUrl: z.string().trim().url("آدرس اسکرین‌شات نامعتبر است"),
 });
 
+export const featureSubmissionSchema = z.object({
+  action: z.literal("feature"),
+  featured: z.boolean(),
+});
+
 export const enterDay7ViewsSchema = z.object({
   action: z.literal("enter_views"),
   views: z.coerce
@@ -320,6 +325,7 @@ export const createCampaignSchema = z
     maxSubmissionsPerUser: z.coerce.number().int().min(1).optional().default(3),
     totalBudgetToman: tomanInt.optional().default(0),
     deadline: createDeadlineSchema,
+    earlyAccessUntil: createDeadlineSchema,
     status: z.enum(EARN_CAMPAIGN_STATUSES).optional().default("draft"),
     trending: z.boolean().optional().default(false),
     toolUrl: toolUrlSchema.optional().default(null),
@@ -341,6 +347,7 @@ export const updateCampaignSchema = z
     maxSubmissionsPerUser: z.coerce.number().int().min(1).optional(),
     totalBudgetToman: tomanInt.optional(),
     deadline: optionalDeadlineSchema,
+    earlyAccessUntil: optionalDeadlineSchema,
     status: z.enum(EARN_CAMPAIGN_STATUSES).optional(),
     trending: z.boolean().optional(),
     toolUrl: toolUrlSchema.optional(),

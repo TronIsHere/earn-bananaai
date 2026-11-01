@@ -1,21 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BadgeCheck, BellRing, Check, X } from "lucide-react";
+import { useAdminRefresh } from "@/components/admin-shell";
 import {
-  BadgeCheck,
-  Check,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  X,
-} from "lucide-react";
-import { SectionBadge } from "@/components/section-badge";
-import {
-  ReviewSlaBadge,
-  ReviewSlaQueueBanner,
-  reviewSlaCardClass,
-} from "@/components/review-sla";
-import { brandCta, brandGlassCard, formFocus } from "@/lib/brand";
+  AdminEmpty,
+  AdminError,
+  AdminExternalLink,
+  AdminLoading,
+  AdminPageHeader,
+  AdminPerson,
+  AdminPill,
+  AdminRefreshButton,
+  AdminSegmented,
+  AdminSpinnerIcon,
+  adminBtn,
+  adminCard,
+  adminField,
+  type PillTone,
+} from "@/components/admin-ui";
+import { CopyButton } from "@/components/copy-button";
+import { ReviewSlaBadge, reviewSlaCardClass } from "@/components/review-sla";
+import { formFocus } from "@/lib/brand";
 import type { EarnVerificationStatus } from "@/lib/earn";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -31,24 +37,27 @@ interface VerificationRow {
   profileUrl: string | null;
   requestedAt: string | null;
   updatedAt: string;
+  campaignSmsEligible: boolean;
+  campaignSmsOptIn: boolean;
 }
 
-const statusLabel: Record<string, string> = {
-  pending: "در انتظار",
-  verified: "تأیید شده",
-  rejected: "رد شده",
-  none: "شروع نشده",
+const statusMeta: Record<string, { label: string; tone: PillTone }> = {
+  pending: { label: "در انتظار", tone: "warn" },
+  verified: { label: "تأیید شده", tone: "cash" },
+  rejected: { label: "رد شده", tone: "danger" },
+  none: { label: "شروع نشده", tone: "neutral" },
 };
 
+type StatusFilter = "pending" | "verified" | "rejected" | "all";
+
 export function AdminVerificationsPanel() {
-  const [status, setStatus] = useState<"pending" | "verified" | "rejected" | "all">(
-    "pending"
-  );
+  const [status, setStatus] = useState<StatusFilter>("pending");
   const [rows, setRows] = useState<VerificationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const refreshOverview = useAdminRefresh();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,8 +85,45 @@ export function AdminVerificationsPanel() {
   }, [status]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
+
+  const setSmsEligible = async (userId: string, eligible: boolean) => {
+    setBusyId(userId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/earn/creators/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignSmsEligible: eligible }),
+      });
+      const data = (await res.json()) as {
+        campaignSmsEligible?: boolean;
+        campaignSmsOptIn?: boolean;
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(data.error || "ذخیره دسترسی پیامک ناموفق بود");
+        return;
+      }
+      setRows((prev) =>
+        prev.map((row) =>
+          row.userId === userId
+            ? {
+                ...row,
+                campaignSmsEligible: Boolean(data.campaignSmsEligible),
+                campaignSmsOptIn: Boolean(data.campaignSmsOptIn),
+              }
+            : row
+        )
+      );
+    } catch {
+      setError("ذخیره دسترسی پیامک ناموفق بود");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const decide = async (
     userId: string,
@@ -104,6 +150,7 @@ export function AdminVerificationsPanel() {
         setError(data.error || "ثبت تصمیم ناموفق بود");
         return;
       }
+      refreshOverview();
       await load();
     } catch {
       setError("ثبت تصمیم ناموفق بود");
@@ -113,167 +160,197 @@ export function AdminVerificationsPanel() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SectionBadge icon={BadgeCheck}>تأیید بیو اینستاگرام</SectionBadge>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/55 hover:bg-white/5 hover:text-white"
-        >
-          <RefreshCw className="size-3.5" />
-          نوسازی
-        </button>
-      </div>
+    <div className="space-y-5">
+      <AdminPageHeader
+        icon={BadgeCheck}
+        title="تأیید پیج اینستاگرام"
+        description="کد را در بیو پیج پیدا کن، بعد تأیید یا رد کن."
+        actions={<AdminRefreshButton onClick={() => void load()} loading={loading} />}
+        guide={
+          <>
+            SLA بررسی حداکثر ۴۸ ساعت است. پروفایل را باز کن و مطمئن شو متن کد
+            دقیقاً در بیو هست. قدیمی‌ترین درخواست‌ها بالاترند. برای سازنده‌های
+            تأییدشده می‌توانی پیامک کمپین جدید را فعال کنی.
+          </>
+        }
+      />
 
-      <p className="text-sm text-white/50">
-        SLA بررسی حداکثر ۴۸ ساعت است. پروفایل را باز کن و مطمئن شو متن کد در بیو
-        هست. قدیمی‌ترین درخواست‌ها بالاترند.
-      </p>
+      <AdminSegmented
+        value={status}
+        onChange={setStatus}
+        options={[
+          {
+            id: "pending",
+            label: "در انتظار",
+            count: status === "pending" && !loading ? rows.length : undefined,
+          },
+          { id: "verified", label: "تأیید شده" },
+          { id: "rejected", label: "رد شده" },
+          { id: "all", label: "همه" },
+        ]}
+      />
 
-      <div className="flex flex-wrap gap-1.5">
-        {(
-          [
-            ["pending", "در انتظار"],
-            ["verified", "تأیید شده"],
-            ["rejected", "رد شده"],
-            ["all", "همه"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setStatus(id)}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-xs transition-colors",
-              status === id
-                ? "bg-brand/15 text-brand"
-                : "bg-white/5 text-white/55 hover:bg-white/8"
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && !loading && rows.length > 0 && <AdminError message={error} />}
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-6 animate-spin text-brand" />
-        </div>
+        <AdminLoading />
+      ) : error && rows.length === 0 ? (
+        <AdminError message={error} onRetry={() => void load()} />
       ) : rows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-sm text-white/45">
-          موردی در این وضعیت نیست.
-        </div>
+        <AdminEmpty
+          icon={BadgeCheck}
+          title={status === "pending" ? "درخواست تأییدی در صف نیست" : "موردی در این وضعیت نیست"}
+        />
       ) : (
         <div className="space-y-3">
-          {status === "pending" && (
-            <ReviewSlaQueueBanner
-              startedAts={rows.map((row) => row.requestedAt ?? row.updatedAt)}
-            />
-          )}
           {rows.map((row) => {
             const slaStart = row.requestedAt ?? row.updatedAt;
+            const meta = statusMeta[row.status] ?? {
+              label: row.status,
+              tone: "neutral" as const,
+            };
+            const busy = busyId === row.userId;
             return (
               <article
                 key={row.userId}
                 className={cn(
-                  brandGlassCard,
-                  "space-y-3 p-4",
+                  adminCard,
+                  "overflow-hidden",
                   row.status === "pending" ? reviewSlaCardClass(slaStart) : ""
                 )}
               >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-white">
-                      {row.firstName} {row.lastName}
-                    </h3>
-                    <span className="rounded-full bg-white/8 px-2 py-0.5 text-[11px] text-white/50">
-                      {statusLabel[row.status] || row.status}
-                    </span>
-                    {row.status === "pending" && (
-                      <ReviewSlaBadge startedAt={slaStart} />
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-white/40" dir="ltr">
-                    {row.mobileNumber}
-                    {row.handle ? ` · @${row.handle}` : ""}
-                  </p>
-                  <p className="mt-1 text-[11px] text-white/35">
-                    {formatDate(row.updatedAt)}
-                  </p>
-                </div>
-                {row.profileUrl && (
-                  <a
-                    href={row.profileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:bg-white/5"
-                  >
-                    <ExternalLink className="size-3.5" />
-                    باز کردن پروفایل
-                  </a>
-                )}
-              </div>
-
-              {row.code && (
-                <div className="rounded-xl border border-dashed border-brand/30 bg-black/20 px-3 py-2">
-                  <div className="text-[11px] text-white/40">کد مورد انتظار در بیو</div>
-                  <code className="mt-1 block text-left text-sm font-bold text-brand" dir="ltr">
-                    {row.code}
-                  </code>
-                </div>
-              )}
-
-              {row.note && row.status !== "pending" && (
-                <p className="text-sm text-white/55">{row.note}</p>
-              )}
-
-              {row.status === "pending" && (
-                <div className="space-y-2">
-                  <textarea
-                    value={notes[row.userId] ?? ""}
-                    onChange={(e) =>
-                      setNotes((prev) => ({
-                        ...prev,
-                        [row.userId]: e.target.value,
-                      }))
-                    }
-                    placeholder="یادداشت برای کاربر (برای رد کردن الزامی است)"
-                    className={cn(
-                      "min-h-16 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white",
-                      formFocus
-                    )}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={busyId === row.userId}
-                      onClick={() => void decide(row.userId, "approve")}
-                      className={cn(brandCta, "px-4 py-2 text-sm disabled:opacity-50")}
-                    >
-                      {busyId === row.userId ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Check className="size-4" />
+                <div className="space-y-4 p-4 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <AdminPerson
+                      firstName={row.firstName}
+                      lastName={row.lastName}
+                      badge={<AdminPill tone={meta.tone}>{meta.label}</AdminPill>}
+                      meta={
+                        <span dir="ltr">
+                          {row.handle ? `@${row.handle} · ` : ""}
+                          {row.mobileNumber}
+                        </span>
+                      }
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      {row.status === "pending" && (
+                        <ReviewSlaBadge startedAt={slaStart} />
                       )}
-                      تأیید
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busyId === row.userId}
-                      onClick={() => void decide(row.userId, "reject")}
-                      className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-500/30 px-4 py-2 text-sm text-rose-200 hover:bg-rose-500/10 disabled:opacity-50"
-                    >
-                      <X className="size-4" />
-                      رد
-                    </button>
+                      <span className="text-[11px] text-white/35">
+                        {formatDate(row.updatedAt)}
+                      </span>
+                    </div>
                   </div>
+
+                  {(row.code || row.profileUrl) && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-brand/30 bg-brand/[0.04] px-3 py-2.5">
+                      {row.code ? (
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-white/40">
+                            کد مورد انتظار در بیو
+                          </div>
+                          <code
+                            className="mt-0.5 block text-left text-base font-bold tracking-wide text-brand"
+                            dir="ltr"
+                          >
+                            {row.code}
+                          </code>
+                        </div>
+                      ) : (
+                        <span />
+                      )}
+                      <div className="flex items-center gap-2">
+                        {row.code && <CopyButton text={row.code} />}
+                        {row.profileUrl && (
+                          <AdminExternalLink href={row.profileUrl} primary>
+                            باز کردن پروفایل
+                          </AdminExternalLink>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {row.note && row.status !== "pending" && (
+                    <p className="text-sm text-white/55">یادداشت: {row.note}</p>
+                  )}
+
+                  {row.status === "verified" && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs text-white/55">
+                        <BellRing className="size-3.5 text-white/40" />
+                        پیامک کمپین جدید
+                        {row.campaignSmsOptIn && (
+                          <AdminPill tone="brand">منتظر کمپین بعدی</AdminPill>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={row.campaignSmsEligible}
+                        disabled={busy}
+                        onClick={() =>
+                          void setSmsEligible(row.userId, !row.campaignSmsEligible)
+                        }
+                        className="inline-flex items-center gap-2 text-xs text-white/60 disabled:opacity-50"
+                      >
+                        {row.campaignSmsEligible ? "فعال" : "غیرفعال"}
+                        <span
+                          className={cn(
+                            "relative h-5 w-9 rounded-full transition-colors",
+                            row.campaignSmsEligible ? "bg-brand" : "bg-white/15"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "absolute top-0.5 size-4 rounded-full bg-white shadow transition-all",
+                              row.campaignSmsEligible
+                                ? "left-0.5 bg-brand-ink"
+                                : "left-[18px]"
+                            )}
+                          />
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </article>
+
+                {row.status === "pending" && (
+                  <div className="space-y-2 border-t border-white/6 bg-black/20 px-4 py-3 sm:px-5">
+                    <textarea
+                      value={notes[row.userId] ?? ""}
+                      onChange={(e) =>
+                        setNotes((prev) => ({
+                          ...prev,
+                          [row.userId]: e.target.value,
+                        }))
+                      }
+                      placeholder="یادداشت برای کاربر (برای رد کردن الزامی است)"
+                      aria-label="یادداشت برای کاربر"
+                      className={cn(adminField, formFocus, "min-h-14")}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void decide(row.userId, "approve")}
+                        className={adminBtn.primary}
+                      >
+                        <AdminSpinnerIcon busy={busy} icon={Check} />
+                        تأیید پیج
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void decide(row.userId, "reject")}
+                        className={adminBtn.danger}
+                      >
+                        <X className="size-4" />
+                        رد
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
             );
           })}
         </div>

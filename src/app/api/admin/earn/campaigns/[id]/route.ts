@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { notifyCampaignOpened } from "@/lib/earn-campaign-alerts";
 import { CampaignError, updateCampaign } from "@/lib/earn-campaigns";
 import { requireAdmin } from "@/lib/session";
 import { mongoIdSchema, updateCampaignSchema } from "@/lib/validations";
@@ -40,6 +41,7 @@ export async function PATCH(
 
   try {
     const campaign = await updateCampaign(idParsed.data, parsed.data);
+    after(() => notifyCampaignOpened(campaign));
     return NextResponse.json({ campaign });
   } catch (error) {
     if (error instanceof CampaignError) {

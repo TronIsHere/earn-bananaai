@@ -7,14 +7,46 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
+import {
+  Check,
+  Flame,
+  Loader2,
+  Megaphone,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useAdminRefresh } from "@/components/admin-shell";
+import {
+  AdminEmpty,
+  AdminError,
+  AdminLoading,
+  AdminPageHeader,
+  AdminPill,
+  AdminRefreshButton,
+  AdminSegmented,
+  AdminSpinnerIcon,
+  AdminStat,
+  adminBtn,
+  adminCard,
+  adminField,
+  type PillTone,
+} from "@/components/admin-ui";
 import { PlatformBadge } from "@/components/campaign-card";
-import { SectionBadge } from "@/components/section-badge";
-import { brandCta, brandCtaGhost, brandGlassCard, formFocus } from "@/lib/brand";
+import { ProgressBar } from "@/components/progress-bar";
+import { formFocus } from "@/lib/brand";
 import {
   DEFAULT_CAMPAIGN_BUDGET_TOMAN,
   DEFAULT_MAX_PAYOUT_PER_VIDEO_TOMAN,
   DEFAULT_VIEW_BONUS_TIERS,
+  EARLY_ACCESS_LEVEL,
+  isCampaignInEarlyAccess,
   MIN_PAID_VIEWS,
   remainingBudgetToman,
 } from "@/lib/earn";
@@ -29,6 +61,7 @@ import {
   formatDate,
   formatGroupedInput,
   formatToman,
+  formatTomanCompact,
   parseGroupedNumber,
 } from "@/lib/utils";
 
@@ -50,12 +83,19 @@ const emptyForm = {
   totalBudgetToman: formatToman(DEFAULT_CAMPAIGN_BUDGET_TOMAN),
   tiers: defaultTierRows,
   deadline: "",
+  earlyAccessUntil: "",
   status: "active" as CampaignStatus,
   trending: false,
 };
 
-const fieldClass =
-  "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder:text-white/35";
+const fieldClass = adminField;
+
+const statusMeta: Record<CampaignStatus, { label: string; tone: PillTone }> = {
+  active: { label: "فعال", tone: "cash" },
+  draft: { label: "پیش‌نویس", tone: "neutral" },
+  paused: { label: "متوقف", tone: "warn" },
+  ended: { label: "پایان‌یافته", tone: "neutral" },
+};
 
 function toDatetimeLocalValue(iso: string | null): string {
   if (!iso) return "";
@@ -89,6 +129,7 @@ function campaignToForm(campaign: Campaign): typeof emptyForm {
         : "",
     })),
     deadline: toDatetimeLocalValue(campaign.deadline),
+    earlyAccessUntil: toDatetimeLocalValue(campaign.earlyAccessUntil ?? null),
     status: campaign.status,
     trending: Boolean(campaign.trending),
   };
@@ -136,6 +177,9 @@ function formToPayload(form: typeof emptyForm) {
     maxSubmissionsPerUser: parseGroupedNumber(form.maxSubmissionsPerUser) || 3,
     totalBudgetToman: parseGroupedNumber(form.totalBudgetToman) || 0,
     deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
+    earlyAccessUntil: form.earlyAccessUntil
+      ? new Date(form.earlyAccessUntil).toISOString()
+      : null,
     status: form.status,
     trending: form.trending,
   };
@@ -171,45 +215,61 @@ function capRelationLabel(total: number, cap: number) {
   return { tone: "over" as const, delta };
 }
 
+type CampaignFilter = "all" | CampaignStatus;
+
+const statusOrder: CampaignStatus[] = ["active", "draft", "paused", "ended"];
+
 export function AdminCampaignsPanel() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CampaignFilter>("all");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const formRef = useRef<HTMLElement>(null);
+  const refreshOverview = useAdminRefresh();
+  const searchParams = useSearchParams();
+  const openedFromLink = useRef(false);
   const payouts = parsedTierPayouts(form);
+  const editing = editingId
+    ? campaigns.find((c) => c.id === editingId) ?? null
+    : null;
 
-  const closeForm = () => {
+  const closeForm = useCallback(() => {
     setShowForm(false);
     setEditingId(null);
     setForm(emptyForm);
-  };
+    setFormError(null);
+  }, []);
 
   const openCreate = () => {
-    if (showForm && !editingId) {
-      closeForm();
-      return;
-    }
     setEditingId(null);
     setForm(emptyForm);
     setShowForm(true);
-    setError(null);
+    setFormError(null);
   };
 
   const openEdit = (campaign: Campaign) => {
-    if (editingId === campaign.id && showForm) {
-      closeForm();
-      return;
-    }
     setEditingId(campaign.id);
     setForm(campaignToForm(campaign));
     setShowForm(true);
-    setError(null);
+    setFormError(null);
   };
+
+  // Overview shortcut links here with ?new=1.
+  useEffect(() => {
+    if (openedFromLink.current || searchParams.get("new") !== "1") return;
+    const timer = window.setTimeout(() => {
+      openedFromLink.current = true;
+      setEditingId(null);
+      setForm(emptyForm);
+      setShowForm(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -235,23 +295,19 @@ export function AdminCampaignsPanel() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
-
-  useEffect(() => {
-    if (!showForm) return;
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [showForm, editingId]);
 
   const save = async () => {
     if (!form.title.trim() || !form.brief.trim()) {
-      setError("عنوان و بریف کمپین الزامی است.");
+      setFormError("عنوان و بریف کمپین الزامی است.");
       return;
     }
 
     const isEdit = Boolean(editingId);
     setSaving(true);
-    setError(null);
+    setFormError(null);
     try {
       const response = await fetch(
         isEdit
@@ -268,7 +324,7 @@ export function AdminCampaignsPanel() {
         error?: string;
       };
       if (!response.ok || !data.campaign) {
-        setError(
+        setFormError(
           data.error ||
             (isEdit ? "به‌روزرسانی کمپین ناموفق بود" : "ذخیره کمپین ناموفق بود")
         );
@@ -282,9 +338,10 @@ export function AdminCampaignsPanel() {
             )
           : [saved, ...prev]
       );
+      refreshOverview();
       closeForm();
     } catch {
-      setError(
+      setFormError(
         isEdit ? "به‌روزرسانی کمپین ناموفق بود" : "ذخیره کمپین ناموفق بود"
       );
     } finally {
@@ -316,6 +373,7 @@ export function AdminCampaignsPanel() {
       if (editingId === id) {
         setForm((current) => ({ ...current, status: saved.status }));
       }
+      refreshOverview();
     } catch {
       setError("به‌روزرسانی کمپین ناموفق بود");
     } finally {
@@ -323,46 +381,124 @@ export function AdminCampaignsPanel() {
     }
   };
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SectionBadge icon={Plus}>ابزار داخلی تیم</SectionBadge>
-        <button
-          type="button"
-          onClick={openCreate}
-          className={cn(brandCta, "px-4 py-2.5 text-sm")}
-        >
-          <Plus className="size-4" />
-          کمپین جدید
-        </button>
-      </div>
+  const countBy = (status: CampaignStatus) =>
+    campaigns.filter((c) => c.status === status).length;
+  const visible = campaigns
+    .filter((c) => filter === "all" || c.status === filter)
+    .sort(
+      (a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status)
+    );
 
-      {error && (
-        <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-          {error}
-        </p>
+  return (
+    <div className="space-y-5">
+      <AdminPageHeader
+        icon={Megaphone}
+        title="کمپین‌ها"
+        description={
+          campaigns.length > 0
+            ? `${formatToman(countBy("active"))} کمپین فعال از ${formatToman(campaigns.length)}`
+            : "بریف، بودجه و سطوح پاداش هر کمپین"
+        }
+        actions={
+          <>
+            <AdminRefreshButton onClick={() => void load()} loading={loading} />
+            <button type="button" onClick={openCreate} className={adminBtn.primary}>
+              <Plus className="size-4" />
+              کمپین جدید
+            </button>
+          </>
+        }
+      />
+
+      {campaigns.length > 0 && (
+        <AdminSegmented
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { id: "all", label: "همه", count: campaigns.length },
+            ...statusOrder.map((status) => ({
+              id: status,
+              label: statusMeta[status].label,
+              count: countBy(status),
+            })),
+          ]}
+        />
       )}
 
-      {showForm && (
-        <section
-          ref={formRef}
-          className={cn(brandGlassCard, "space-y-3 p-5")}
-        >
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-white">
-              {editingId ? "ویرایش کمپین" : "کمپین جدید"}
-            </p>
-            <p className="text-xs leading-relaxed text-white/40">
-              {editingId
-                ? "تغییرات روی همین کمپین ذخیره می‌شود. بودجه خرج‌شده عوض نمی‌شود."
-                : `پاداش پایه نداریم: هیچ ریلی زیر ${formatToman(MIN_PAID_VIEWS)} بازدید پولی نمی‌گیرد. سطوح پیشنهادی ۱ک / ۵ک / ۲۰ک / ۵۰ک / ۱۰۰ک بازدید از قبل پر شده و پاداش هر سطح را می‌توانید دستی عوض کنید.`}
-            </p>
-          </div>
+      {error && <AdminError message={error} onRetry={() => void load()} />}
+
+      {loading ? (
+        <AdminLoading />
+      ) : campaigns.length === 0 ? (
+        <AdminEmpty
+          icon={Megaphone}
+          title="هنوز کمپینی ساخته نشده"
+          hint="با «کمپین جدید» اولین بریف و بودجه را بساز."
+        />
+      ) : visible.length === 0 ? (
+        <AdminEmpty icon={Megaphone} title="کمپینی با این وضعیت نیست" />
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {visible.map((campaign) => (
+            <CampaignRow
+              key={campaign.id}
+              campaign={campaign}
+              busy={updatingId === campaign.id}
+              disabled={saving}
+              onEdit={() => openEdit(campaign)}
+              onStatus={(status) => void updateStatus(campaign.id, status)}
+            />
+          ))}
+        </div>
+      )}
+
+      <AdminSheet
+        open={showForm}
+        onClose={() => !saving && closeForm()}
+        title={editing ? `ویرایش «${editing.title}»` : "کمپین جدید"}
+        description={
+          editing
+            ? "تغییرات روی همین کمپین ذخیره می‌شود. بودجه خرج‌شده عوض نمی‌شود."
+            : `پاداش پایه نداریم: هیچ ریلی زیر ${formatToman(MIN_PAID_VIEWS)} بازدید پولی نمی‌گیرد.`
+        }
+        footer={
+          <>
+            {formError && (
+              <p className="mb-2 text-sm text-rose-300">{formError}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving}
+                className={adminBtn.primary}
+              >
+                <AdminSpinnerIcon busy={saving} icon={Check} />
+                {saving
+                  ? "در حال ذخیره..."
+                  : editingId
+                    ? "ذخیره تغییرات"
+                    : "ساخت کمپین"}
+              </button>
+              <button
+                type="button"
+                onClick={closeForm}
+                disabled={saving}
+                className={adminBtn.ghost}
+              >
+                انصراف
+              </button>
+            </div>
+          </>
+        }
+      >
+        <FormSection title="اطلاعات پایه">
           <Field label="عنوان کمپین">
             <input
               value={form.title}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
               className={cn(fieldClass, formFocus)}
+              autoFocus
             />
           </Field>
           <Field
@@ -387,16 +523,39 @@ export function AdminCampaignsPanel() {
                 }
                 className={cn(fieldClass, formFocus)}
               >
-                <option value="draft">پیش‌نویس</option>
-                <option value="active">فعال</option>
-                <option value="paused">متوقف</option>
-                <option value="ended">پایان‌یافته</option>
+                {statusOrder.map((status) => (
+                  <option key={status} value={status}>
+                    {statusMeta[status].label}
+                  </option>
+                ))}
               </select>
             </Field>
-            <Field
-              label="سقف هر ویدیو"
-              hint="حداکثر پاداش بازدید یک ویدیو"
-            >
+            <label className="flex items-center gap-2 self-end rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-white/70">
+              <input
+                type="checkbox"
+                checked={form.trending}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, trending: e.target.checked }))
+                }
+                className="size-4 accent-brand"
+              />
+              <Flame className="size-4 text-brand" />
+              کمپین داغ
+            </label>
+          </div>
+        </FormSection>
+
+        <FormSection title="بودجه و زمان">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="بودجه کل (تومان)" hint={editing ? `خرج‌شده ${formatToman(editing.spentBudgetToman)}` : "۱۰–۲۰ میلیون تومان"}>
+              <NumberInput
+                value={form.totalBudgetToman}
+                onChange={(totalBudgetToman) =>
+                  setForm((f) => ({ ...f, totalBudgetToman }))
+                }
+              />
+            </Field>
+            <Field label="سقف هر ویدیو (تومان)" hint="حداکثر پاداش بازدید یک ویدیو">
               <NumberInput
                 value={form.maxPayoutPerVideoToman}
                 onChange={(maxPayoutPerVideoToman) =>
@@ -404,21 +563,11 @@ export function AdminCampaignsPanel() {
                 }
               />
             </Field>
-            <Field
-              label="بودجه کل"
-              hint={
-                editingId
-                  ? `خرج‌شده ${formatToman(
-                      campaigns.find((c) => c.id === editingId)
-                        ?.spentBudgetToman ?? 0
-                    )}`
-                  : "۱۰–۲۰ میلیون تومان"
-              }
-            >
+            <Field label="سقف ارسال هر کاربر">
               <NumberInput
-                value={form.totalBudgetToman}
-                onChange={(totalBudgetToman) =>
-                  setForm((f) => ({ ...f, totalBudgetToman }))
+                value={form.maxSubmissionsPerUser}
+                onChange={(maxSubmissionsPerUser) =>
+                  setForm((f) => ({ ...f, maxSubmissionsPerUser }))
                 }
               />
             </Field>
@@ -432,54 +581,52 @@ export function AdminCampaignsPanel() {
                 className={cn(fieldClass, formFocus)}
               />
             </Field>
-            <Field label="سقف ارسال هر کاربر">
-              <NumberInput
-                value={form.maxSubmissionsPerUser}
-                onChange={(maxSubmissionsPerUser) =>
-                  setForm((f) => ({ ...f, maxSubmissionsPerUser }))
+            <Field
+              label={`دسترسی زودهنگام سطح ${EARLY_ACCESS_LEVEL.label} تا`}
+              hint="خالی یعنی همه از اول می‌توانند شرکت کنند"
+            >
+              <input
+                type="datetime-local"
+                value={form.earlyAccessUntil}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, earlyAccessUntil: e.target.value }))
                 }
+                className={cn(fieldClass, formFocus)}
               />
             </Field>
-            <label className="flex items-center gap-2 self-end rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white/70">
-              <input
-                type="checkbox"
-                checked={form.trending}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, trending: e.target.checked }))
-                }
-              />
-              کمپین داغ
-            </label>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {form.tiers.map((row, index) => {
-              const last = index === form.tiers.length - 1;
-              const level = formatToman(index + 1);
-              const stageTotal = payouts.rows[index]?.total ?? null;
-              const relation =
-                stageTotal != null && payouts.cap > 0
-                  ? capRelationLabel(stageTotal, payouts.cap)
-                  : null;
-              const bonusHint =
-                stageTotal == null
-                  ? undefined
-                  : relation?.tone === "equal"
-                    ? `جمع تا اینجا ${formatToman(stageTotal)} · برابر سقف`
-                    : relation?.tone === "under"
-                      ? `جمع تا اینجا ${formatToman(stageTotal)} · ${formatToman(relation.delta)} کمتر از سقف`
-                      : relation
-                        ? `جمع تا اینجا ${formatToman(stageTotal)} · ${formatToman(relation.delta)} بیشتر از سقف`
-                        : `جمع تا اینجا ${formatToman(stageTotal)}`;
-              return (
-                <div key={index} className="contents">
-                  <Field
-                    label={
-                      last
-                        ? `بازدید سطح ${level} (رویا)`
-                        : `بازدید سطح ${level}`
-                    }
+        </FormSection>
+
+        <FormSection
+          title="سطوح پاداش بازدید"
+          hint="پاداش هر سطح روی سطح قبلی جمع می‌شود. سطح آخر سطح رویاست."
+        >
+          <div className="overflow-hidden rounded-xl border border-white/8">
+            <div className="grid grid-cols-[3rem_1fr_1fr_6.5rem] gap-2 border-b border-white/6 bg-white/[0.02] px-3 py-2 text-[11px] text-white/40">
+              <span>سطح</span>
+              <span>از بازدید</span>
+              <span>پاداش (تومان)</span>
+              <span className="text-left">جمع تا اینجا</span>
+            </div>
+            <div className="divide-y divide-white/6">
+              {form.tiers.map((row, index) => {
+                const last = index === form.tiers.length - 1;
+                const stageTotal = payouts.rows[index]?.total ?? null;
+                const relation =
+                  stageTotal != null && payouts.cap > 0
+                    ? capRelationLabel(stageTotal, payouts.cap)
+                    : null;
+                return (
+                  <div
+                    key={index}
+                    className="grid grid-cols-[3rem_1fr_1fr_6.5rem] items-center gap-2 px-3 py-2"
                   >
+                    <span className="text-xs font-semibold text-white/60">
+                      {formatToman(index + 1)}
+                      {last && <span className="block text-[10px] font-normal text-brand">رویا</span>}
+                    </span>
                     <NumberInput
+                      ariaLabel={`بازدید سطح ${formatToman(index + 1)}`}
                       value={row.views}
                       onChange={(views) =>
                         setForm((f) => ({
@@ -490,25 +637,8 @@ export function AdminCampaignsPanel() {
                         }))
                       }
                     />
-                  </Field>
-                  <Field
-                    label={
-                      last
-                        ? `پاداش سطح ${level} (رویا)`
-                        : `پاداش سطح ${level}`
-                    }
-                    hint={bonusHint}
-                    hintClass={
-                      relation?.tone === "equal"
-                        ? "text-brand"
-                        : relation?.tone === "over"
-                          ? "text-rose-300"
-                          : relation?.tone === "under"
-                            ? "text-amber-200/80"
-                            : undefined
-                    }
-                  >
                     <NumberInput
+                      ariaLabel={`پاداش سطح ${formatToman(index + 1)}`}
                       value={row.bonus}
                       onChange={(bonus) =>
                         setForm((f) => ({
@@ -519,16 +649,30 @@ export function AdminCampaignsPanel() {
                         }))
                       }
                     />
-                  </Field>
-                </div>
-              );
-            })}
+                    <span
+                      className={cn(
+                        "text-left text-xs tabular-nums",
+                        stageTotal == null
+                          ? "text-white/25"
+                          : relation?.tone === "over"
+                            ? "text-rose-300"
+                            : relation?.tone === "equal"
+                              ? "text-brand"
+                              : "text-white/70"
+                      )}
+                    >
+                      {stageTotal == null ? "-" : formatTomanCompact(stageTotal)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <VideoCapStatus form={form} />
-          <Field
-            label="چک‌لیست"
-            hint="اگر پر شود الزامی است · هر خط یک مورد"
-          >
+        </FormSection>
+
+        <FormSection title="الزامات انتشار" hint="هر فیلدی که پر شود برای سازنده الزامی است">
+          <Field label="چک‌لیست" hint="هر خط یک مورد">
             <textarea
               value={form.requirementsChecklist}
               onChange={(e) =>
@@ -540,30 +684,29 @@ export function AdminCampaignsPanel() {
               className={cn(fieldClass, formFocus, "min-h-20")}
             />
           </Field>
-          <Field
-            label="هشتگ‌های الزامی"
-            hint="اگر پر شود باید در کپشن باشد · با کاما جدا کنید"
-          >
-            <input
-              value={form.requiredHashtags}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, requiredHashtags: e.target.value }))
-              }
-              className={cn(fieldClass, formFocus)}
-            />
-          </Field>
-          <Field
-            label="آیدی / منشن الزامی"
-            hint="اگر پر شود باید در پست باشد · با کاما جدا کنید"
-          >
-            <input
-              value={form.requiredMentions}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, requiredMentions: e.target.value }))
-              }
-              className={cn(fieldClass, formFocus)}
-            />
-          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="هشتگ‌های الزامی" hint="با کاما جدا کنید">
+              <input
+                value={form.requiredHashtags}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, requiredHashtags: e.target.value }))
+                }
+                className={cn(fieldClass, formFocus)}
+              />
+            </Field>
+            <Field label="آیدی / منشن الزامی" hint="با کاما جدا کنید">
+              <input
+                value={form.requiredMentions}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, requiredMentions: e.target.value }))
+                }
+                className={cn(fieldClass, formFocus)}
+              />
+            </Field>
+          </div>
+        </FormSection>
+
+        <FormSection title="ابزار و پرامپت‌ها">
           <Field
             label="لینک ابزار بنانا"
             hint="اختیاری · با https شروع شود · {prompt} جای متن پرامپت می‌نشیند"
@@ -580,128 +723,221 @@ export function AdminCampaignsPanel() {
             rows={form.promptPack}
             onChange={(promptPack) => setForm((f) => ({ ...f, promptPack }))}
           />
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving}
-              className={cn(brandCta, "px-5 py-2.5 text-sm disabled:opacity-50")}
-            >
-              {saving && <Loader2 className="size-4 animate-spin" />}
-              {saving
-                ? "در حال ذخیره..."
-                : editingId
-                  ? "ذخیره تغییرات"
-                  : "ذخیره کمپین"}
-            </button>
-            <button
-              type="button"
-              onClick={closeForm}
-              disabled={saving}
-              className={cn(
-                brandCtaGhost,
-                "px-5 py-2.5 text-sm disabled:opacity-50"
-              )}
-            >
-              انصراف
-            </button>
-          </div>
-        </section>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-6 animate-spin text-brand" />
-        </div>
-      ) : campaigns.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/15 px-6 py-16 text-center text-sm text-white/45">
-          هنوز کمپینی ساخته نشده است.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {campaigns.map((campaign) => (
-            <div
-              key={campaign.id}
-              className={cn(
-                brandGlassCard,
-                "p-4",
-                editingId === campaign.id && "border-brand/40 ring-1 ring-brand/20"
-              )}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <h2 className="font-semibold text-white">{campaign.title}</h2>
-                    <PlatformBadge platform={campaign.platform} />
-                    <StatusPill status={campaign.status} />
-                    {campaign.trending && (
-                      <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[11px] text-brand">
-                        داغ
-                      </span>
-                    )}
-                  </div>
-                  <p className="max-w-3xl text-sm text-white/55 line-clamp-2">
-                    {campaign.brief}
-                  </p>
-                  <div className="mt-2 text-xs text-white/40">
-                    سقف هر ویدیو {formatToman(campaign.maxPayoutPerVideoToman)} · باقی‌مانده{" "}
-                    {formatToman(
-                      remainingBudgetToman(
-                        campaign.spentBudgetToman,
-                        campaign.totalBudgetToman
-                      )
-                    )}
-                    /{formatToman(campaign.totalBudgetToman)} ·{" "}
-                    {formatDate(campaign.createdAt)}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => openEdit(campaign)}
-                    className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2.5 py-1 text-xs text-white/70 transition-colors hover:bg-white/5 disabled:opacity-50"
-                  >
-                    <Pencil className="size-3" />
-                    ویرایش
-                  </button>
-                  {campaign.status !== "active" && (
-                    <button
-                      type="button"
-                      disabled={updatingId === campaign.id}
-                      onClick={() => void updateStatus(campaign.id, "active")}
-                      className="rounded-full border border-emerald-500/30 px-2.5 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
-                    >
-                      فعال
-                    </button>
-                  )}
-                  {campaign.status === "active" && (
-                    <button
-                      type="button"
-                      disabled={updatingId === campaign.id}
-                      onClick={() => void updateStatus(campaign.id, "paused")}
-                      className="rounded-full border border-amber-500/30 px-2.5 py-1 text-xs text-amber-300 transition-colors hover:bg-amber-500/10 disabled:opacity-50"
-                    >
-                      توقف
-                    </button>
-                  )}
-                  {campaign.status !== "ended" && (
-                    <button
-                      type="button"
-                      disabled={updatingId === campaign.id}
-                      onClick={() => void updateStatus(campaign.id, "ended")}
-                      className="rounded-full border border-white/20 px-2.5 py-1 text-xs text-white/60 transition-colors hover:bg-white/5 disabled:opacity-50"
-                    >
-                      پایان
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+        </FormSection>
+      </AdminSheet>
     </div>
+  );
+}
+
+function CampaignRow({
+  campaign,
+  busy,
+  disabled,
+  onEdit,
+  onStatus,
+}: {
+  campaign: Campaign;
+  busy: boolean;
+  disabled: boolean;
+  onEdit: () => void;
+  onStatus: (status: CampaignStatus) => void;
+}) {
+  const remaining = remainingBudgetToman(
+    campaign.spentBudgetToman,
+    campaign.totalBudgetToman
+  );
+  const spentPct =
+    campaign.totalBudgetToman > 0
+      ? (campaign.spentBudgetToman / campaign.totalBudgetToman) * 100
+      : 0;
+  return (
+    <article
+      className={cn(
+        adminCard,
+        "flex flex-col overflow-hidden",
+        campaign.status === "active" && "border-white/12"
+      )}
+    >
+      <div className="flex-1 space-y-3 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusPill status={campaign.status} />
+          <PlatformBadge platform={campaign.platform} />
+          {campaign.trending && (
+            <AdminPill tone="brand" icon={Flame}>
+              داغ
+            </AdminPill>
+          )}
+          {isCampaignInEarlyAccess(campaign) && (
+            <AdminPill tone="brand">
+              زودهنگام {EARLY_ACCESS_LEVEL.label} تا{" "}
+              {formatDate(campaign.earlyAccessUntil ?? null)}
+            </AdminPill>
+          )}
+        </div>
+        <div>
+          <h2 className="font-bold text-white">{campaign.title}</h2>
+          <p className="mt-1 line-clamp-2 text-sm text-white/50">{campaign.brief}</p>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
+            <span className="text-white/45">
+              خرج‌شده {formatToman(Math.round(spentPct))}٪
+            </span>
+            <span className="tabular-nums text-white/55">
+              <span className="font-bold text-white">{formatTomanCompact(remaining)}</span>
+              {" باقی‌مانده از "}
+              {formatTomanCompact(campaign.totalBudgetToman)}
+            </span>
+          </div>
+          <ProgressBar
+            value={spentPct}
+            className={spentPct >= 90 ? "bg-rose-400" : spentPct >= 70 ? "bg-amber-300" : undefined}
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 rounded-xl bg-black/20 px-3 py-2">
+          <AdminStat
+            label="سقف هر ویدیو"
+            value={formatTomanCompact(campaign.maxPayoutPerVideoToman)}
+          />
+          <AdminStat
+            label="مهلت"
+            value={campaign.deadline ? formatDate(campaign.deadline) : "بدون مهلت"}
+            tone="muted"
+          />
+          <AdminStat label="ساخته شده" value={formatDate(campaign.createdAt)} tone="muted" />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-white/6 bg-black/20 px-4 py-2.5 sm:px-5">
+        <button type="button" disabled={disabled} onClick={onEdit} className={adminBtn.small}>
+          <Pencil className="size-3" />
+          ویرایش
+        </button>
+        <span className="mr-auto" />
+        {busy && <Loader2 className="size-3.5 animate-spin text-white/40" />}
+        {campaign.status !== "active" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onStatus("active")}
+            className={cn(adminBtn.small, "border-cash/30 text-cash hover:bg-cash/10")}
+          >
+            <Play className="size-3" />
+            فعال کردن
+          </button>
+        )}
+        {campaign.status === "active" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onStatus("paused")}
+            className={cn(adminBtn.small, "border-amber-500/30 text-amber-200 hover:bg-amber-500/10")}
+          >
+            <Pause className="size-3" />
+            توقف
+          </button>
+        )}
+        {campaign.status !== "ended" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onStatus("ended")}
+            className={adminBtn.small}
+          >
+            <Square className="size-3" />
+            پایان
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+/** Slide-over panel from the left edge (RTL end side). */
+function AdminSheet({
+  open,
+  onClose,
+  title,
+  description,
+  footer,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  description?: string;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  // Portal: an animated (transformed) ancestor would otherwise clip `fixed`.
+  return createPortal(
+    <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label={title}>
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+        aria-label="بستن"
+      />
+      <div className="absolute inset-y-0 left-0 flex w-full max-w-2xl flex-col border-r border-white/8 bg-[#0b0c0c] shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+        <div className="flex items-start justify-between gap-3 border-b border-white/8 px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-bold text-white">{title}</h2>
+            {description && (
+              <p className="mt-0.5 text-xs leading-relaxed text-white/45">{description}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-white/5 hover:text-white"
+            aria-label="بستن"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">{children}</div>
+        <div className="border-t border-white/8 bg-black/40 px-5 py-3">{footer}</div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function FormSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 border-b border-white/6 pb-2">
+        <h3 className="text-sm font-bold text-white">{title}</h3>
+        {hint && <span className="text-[11px] text-white/35">{hint}</span>}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -799,14 +1035,17 @@ function NumberInput({
   value,
   onChange,
   readOnly = false,
+  ariaLabel,
 }: {
   value: string;
   onChange?: (value: string) => void;
   readOnly?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <input
       inputMode="numeric"
+      aria-label={ariaLabel}
       value={value}
       readOnly={readOnly}
       tabIndex={readOnly ? -1 : undefined}
@@ -814,6 +1053,7 @@ function NumberInput({
       className={cn(
         fieldClass,
         formFocus,
+        "tabular-nums",
         readOnly && "cursor-default text-white/70"
       )}
     />
@@ -834,7 +1074,7 @@ function Field({
   return (
     <label className="block space-y-1.5">
       <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-        <span className="text-xs text-white/50">{label}</span>
+        <span className="text-xs font-medium text-white/60">{label}</span>
         {hint && (
           <span className={cn("text-[11px] text-white/30", hintClass)}>
             {hint}
@@ -846,27 +1086,14 @@ function Field({
   );
 }
 
-function StatusPill({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: "bg-white/10 text-white/50",
-    active: "bg-emerald-500/15 text-emerald-300",
-    paused: "bg-amber-500/15 text-amber-300",
-    ended: "bg-white/10 text-white/40",
-  };
-  const labels: Record<string, string> = {
-    draft: "پیش‌نویس",
-    active: "فعال",
-    paused: "متوقف",
-    ended: "پایان‌یافته",
-  };
+function StatusPill({ status }: { status: CampaignStatus }) {
+  const meta = statusMeta[status] ?? { label: status, tone: "neutral" as const };
   return (
-    <span
-      className={cn(
-        "rounded-full px-2 py-0.5 text-[11px]",
-        map[status] || "bg-white/10 text-white/50"
+    <AdminPill tone={meta.tone}>
+      {status === "active" && (
+        <span className="relative inline-flex size-1.5 rounded-full bg-cash earn-live" />
       )}
-    >
-      {labels[status] || status}
-    </span>
+      {meta.label}
+    </AdminPill>
   );
 }

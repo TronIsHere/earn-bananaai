@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { notifyCampaignOpened } from "@/lib/earn-campaign-alerts";
 import {
   CampaignError,
   createCampaign,
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
       ...parsed.data,
       createdBy: auth.session.user.id,
     });
+    after(() => notifyCampaignOpened(campaign));
     return NextResponse.json({ campaign }, { status: 201 });
   } catch (error) {
     if (error instanceof CampaignError) {

@@ -2,6 +2,8 @@ import "server-only";
 import mongoose, { type Types } from "mongoose";
 import { isCampaignOpen, type EarnCampaignStatus, type EarnPlatform } from "@/lib/earn";
 import connectDB from "@/lib/mongodb";
+import { listShowcaseByCampaign } from "@/lib/earn-showcase";
+import type { ShowcaseReelJson } from "@/lib/earn-submissions-types";
 import type { PromptPackItem, ViewBonusTier } from "@/lib/types";
 import EarnCampaign, { type IEarnCampaign } from "@/models/earn-campaign";
 
@@ -37,11 +39,14 @@ export interface CampaignJson {
   totalBudgetToman: number;
   spentBudgetToman: number;
   deadline: string | null;
+  earlyAccessUntil: string | null;
   status: EarnCampaignStatus;
   createdAt: string;
   trending: boolean;
   toolUrl: string | null;
   promptPack: PromptPackItem[];
+  /** Featured winning reels (public list only). */
+  showcase?: ShowcaseReelJson[];
 }
 
 export type CampaignLean = IEarnCampaign & { _id: Types.ObjectId };
@@ -77,6 +82,7 @@ export function serializeCampaign(doc: CampaignLean): CampaignJson {
     totalBudgetToman: doc.totalBudgetToman,
     spentBudgetToman: doc.spentBudgetToman,
     deadline: toIso(doc.deadline),
+    earlyAccessUntil: toIso(doc.earlyAccessUntil),
     status: doc.status,
     createdAt: toIso(doc.createdAt) ?? new Date().toISOString(),
     trending: Boolean(doc.trending),
@@ -93,7 +99,12 @@ export async function listPublicCampaigns(): Promise<CampaignJson[]> {
   const campaigns = await EarnCampaign.find(activeCampaignMongoFilter())
     .sort({ trending: -1, createdAt: -1 })
     .lean<CampaignLean[]>();
-  return campaigns.filter((campaign) => isCampaignOpen(campaign)).map(serializeCampaign);
+  const open = campaigns.filter((campaign) => isCampaignOpen(campaign));
+  const showcase = await listShowcaseByCampaign(open.map((campaign) => campaign._id));
+  return open.map((campaign) => ({
+    ...serializeCampaign(campaign),
+    showcase: showcase.get(campaign._id.toString()) ?? [],
+  }));
 }
 
 export async function listAdminCampaigns(): Promise<CampaignJson[]> {
@@ -118,6 +129,7 @@ export interface CreateCampaignInput {
   maxSubmissionsPerUser: number;
   totalBudgetToman: number;
   deadline: Date | null;
+  earlyAccessUntil: Date | null;
   status: EarnCampaignStatus;
   trending: boolean;
   toolUrl: string | null;
@@ -145,6 +157,7 @@ export async function createCampaign(
       totalBudgetToman: input.totalBudgetToman,
       spentBudgetToman: 0,
       deadline: input.deadline,
+      earlyAccessUntil: input.earlyAccessUntil,
       status: input.status,
       trending: input.trending,
       toolUrl: input.toolUrl,
@@ -200,6 +213,9 @@ export async function updateCampaign(
     campaign.totalBudgetToman = patch.totalBudgetToman;
   }
   if (patch.deadline !== undefined) campaign.deadline = patch.deadline;
+  if (patch.earlyAccessUntil !== undefined) {
+    campaign.earlyAccessUntil = patch.earlyAccessUntil;
+  }
   if (patch.status !== undefined) campaign.status = patch.status;
   if (patch.trending !== undefined) campaign.trending = patch.trending;
   if (patch.toolUrl !== undefined) campaign.toolUrl = patch.toolUrl;

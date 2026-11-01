@@ -1,7 +1,10 @@
 import "server-only";
 import mongoose, { Schema, type Model, type Types } from "mongoose";
 import {
+  CREATOR_LEVEL_IDS,
   EARN_SUBMISSION_STATUSES,
+  REVIEW_SLA_HOURS,
+  type CreatorLevelId,
   type EarnSubmissionStatus,
 } from "@/lib/earn";
 
@@ -16,6 +19,11 @@ export interface IEarnSubmission {
   reviewedAt: Date | null;
   resubmitCount: number;
   resubmittedAt: Date | null;
+  /** Creator level when submitted; sets the review promise. */
+  creatorLevel: CreatorLevelId;
+  reviewSlaHours: number;
+  /** Review queue is ordered by this, so faster levels surface first. */
+  reviewDueAt: Date | null;
   basePayoutToman: number;
   basePaidAt: Date | null;
   day7Views: number | null;
@@ -26,6 +34,8 @@ export interface IEarnSubmission {
   bonusToman: number;
   bonusPaidAt: Date | null;
   finalizedAt: Date | null;
+  /** Set when an admin features this reel in the campaign's winners gallery. */
+  featuredAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -82,6 +92,20 @@ const EarnSubmissionSchema = new Schema<IEarnSubmission>(
       type: Date,
       default: null,
     },
+    creatorLevel: {
+      type: String,
+      enum: CREATOR_LEVEL_IDS,
+      default: "starter",
+    },
+    reviewSlaHours: {
+      type: Number,
+      default: REVIEW_SLA_HOURS,
+      min: 1,
+    },
+    reviewDueAt: {
+      type: Date,
+      default: null,
+    },
     basePayoutToman: {
       type: Number,
       required: true,
@@ -125,13 +149,22 @@ const EarnSubmissionSchema = new Schema<IEarnSubmission>(
       type: Date,
       default: null,
     },
+    featuredAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 EarnSubmissionSchema.index({ status: 1, createdAt: -1 });
+EarnSubmissionSchema.index({ status: 1, reviewDueAt: 1 });
 EarnSubmissionSchema.index({ userId: 1, campaignId: 1 });
 EarnSubmissionSchema.index({ campaignId: 1, status: 1 });
+EarnSubmissionSchema.index(
+  { campaignId: 1, featuredAt: -1 },
+  { partialFilterExpression: { featuredAt: { $type: "date" } } }
+);
 EarnSubmissionSchema.index(
   { instagramPostUrl: 1 },
   {
@@ -145,7 +178,8 @@ EarnSubmissionSchema.index(
 const existingModel = mongoose.models.EarnSubmission as
   | Model<IEarnSubmission>
   | undefined;
-if (existingModel && !existingModel.schema.path("day7ClaimedViews")) {
+if (existingModel && (!existingModel.schema.path("reviewDueAt") ||
+    !existingModel.schema.path("featuredAt"))) {
   mongoose.deleteModel("EarnSubmission");
 }
 

@@ -2,9 +2,13 @@ import "server-only";
 import mongoose, { type Types } from "mongoose";
 import {
   computeViewBonusToman,
+  creatorLevelForPaidReels,
+  creatorMaxPayoutPerVideoToman,
+  creatorViewBonusTiers,
   DAY7_ELIGIBLE_STATUSES,
   EARN_SUBMISSION_STATUSES,
   matchViewBonusTier,
+  REVIEW_SLA_HOURS,
   sumReachedViewBonusToman,
   viewBonusRemainingCap,
   type EarnSubmissionStatus,
@@ -13,6 +17,7 @@ import {
   creditEarnWallet,
   EarnWalletError,
 } from "@/lib/earn-wallet";
+import { getCreatorLevel, getPaidReelCounts } from "@/lib/earn-creator-level";
 import connectDB from "@/lib/mongodb";
 import type {
   AdminSubmissionJson,
@@ -75,6 +80,7 @@ export type AdminSubmissionDoc = {
   reviewerNote: string | null;
   resubmitCount?: number;
   resubmittedAt?: Date | string | null;
+  reviewSlaHours?: number | null;
   basePayoutToman: number;
   bonusToman: number;
   day7Views: number | null;
@@ -84,6 +90,7 @@ export type AdminSubmissionDoc = {
   basePaidAt: Date | string | null;
   bonusPaidAt: Date | string | null;
   finalizedAt: Date | string | null;
+  featuredAt?: Date | string | null;
   createdAt: Date | string;
   userId: unknown;
   campaignId: unknown;
@@ -124,8 +131,12 @@ function isPopulatedCampaign(value: unknown): value is PopulatedCampaign {
 }
 
 export function serializeAdminSubmission(
-  doc: AdminSubmissionDoc
+  doc: AdminSubmissionDoc,
+  paidReelsByUser: Map<string, number> = new Map()
 ): AdminSubmissionJson {
+  const paidReels = isPopulatedUser(doc.userId)
+    ? (paidReelsByUser.get(doc.userId._id.toString()) ?? 0)
+    : 0;
   const user = isPopulatedUser(doc.userId)
     ? {
         id: doc.userId._id.toString(),
@@ -133,6 +144,8 @@ export function serializeAdminSubmission(
         lastName: doc.userId.lastName,
         instagramHandle: doc.userId.earnInstagramHandle ?? null,
         mobileNumber: doc.userId.mobileNumber,
+        creatorLevel: creatorLevelForPaidReels(paidReels).id,
+        paidReels,
       }
     : null;
 
@@ -163,8 +176,10 @@ export function serializeAdminSubmission(
     basePaidAt: toIso(doc.basePaidAt),
     bonusPaidAt: toIso(doc.bonusPaidAt),
     finalizedAt: toIso(doc.finalizedAt),
+    featuredAt: toIso(doc.featuredAt),
     createdAt: toIso(doc.createdAt) ?? new Date().toISOString(),
     resubmittedAt: toIso(doc.resubmittedAt),
+    reviewSlaHours: doc.reviewSlaHours ?? REVIEW_SLA_HOURS,
     user,
     campaign,
   };
@@ -178,6 +193,13 @@ export function adminSubmissionStatusFilter(
   }
   if (status === "review") {
     return { status: "pending" };
+  }
+  if (status === "winners") {
+    // Paid reels an admin can feature in the campaign gallery.
+    return {
+      status: "finalized",
+      $or: [{ bonusToman: { $gt: 0 } }, { basePayoutToman: { $gt: 0 } }],
+    };
   }
   if ((EARN_SUBMISSION_STATUSES as readonly string[]).includes(status)) {
     return { status };
@@ -195,13 +217,23 @@ export async function listAdminSubmissions(
 
   await connectDB();
   const isReviewQueue = status === "review" || status === "pending";
+  // Review queue: closest SLA deadline first, so faster creator levels surface.
   const rows = (await EarnSubmission.find(filter)
-    .sort(isReviewQueue ? { updatedAt: 1 } : { basePaidAt: 1, createdAt: 1 })
+    .sort(
+      isReviewQueue
+        ? { reviewDueAt: 1, updatedAt: 1 }
+        : status === "winners"
+          ? { bonusToman: -1, finalizedAt: -1 }
+          : { basePaidAt: 1, createdAt: 1 }
+    )
     .limit(100)
     .populate(ADMIN_POPULATE)
     .lean()) as unknown as AdminSubmissionDoc[];
 
-  return rows.map(serializeAdminSubmission);
+  const paidReelsByUser = await getPaidReelCounts(
+    rows.flatMap((row) => (isPopulatedUser(row.userId) ? [row.userId._id] : []))
+  );
+  return rows.map((row) => serializeAdminSubmission(row, paidReelsByUser));
 }
 
 export async function getAdminSubmissionById(
@@ -210,7 +242,11 @@ export async function getAdminSubmissionById(
   const doc = (await EarnSubmission.findById(id)
     .populate(ADMIN_POPULATE)
     .lean()) as unknown as AdminSubmissionDoc | null;
-  return doc ? serializeAdminSubmission(doc) : null;
+  if (!doc) return null;
+  const paidReelsByUser = await getPaidReelCounts(
+    isPopulatedUser(doc.userId) ? [doc.userId._id] : []
+  );
+  return serializeAdminSubmission(doc, paidReelsByUser);
 }
 
 export interface EnterDay7ViewBonusResult {
@@ -230,7 +266,8 @@ export interface EnterDay7ViewBonusResult {
 
 /**
  * Admin enters day-7 views: sum reached tiers (nothing under MIN_PAID_VIEWS),
- * cap by maxPayoutPerVideoToman, credit wallet when bonus > 0, finalize.
+ * cap by maxPayoutPerVideoToman, both raised by the creator level boost, credit
+ * wallet when bonus > 0, finalize.
  */
 export async function enterDay7ViewBonus(params: {
   submissionId: string;
@@ -272,19 +309,23 @@ export async function enterDay7ViewBonus(params: {
     throw new Day7Error("کمپین پیدا نشد", "CAMPAIGN_NOT_FOUND", 404);
   }
 
+  // Level at payout time (this reel is not finalized yet, so it is not counted).
+  const { level } = await getCreatorLevel(submission.userId);
+  const maxPayoutToman = creatorMaxPayoutPerVideoToman(
+    campaign.maxPayoutPerVideoToman,
+    level
+  );
+
   // Legacy submissions were credited a base on approval; it still counts toward the cap.
   const basePayoutToman = submission.basePayoutToman ?? 0;
-  const tiers = campaign.viewBonusTiers ?? [];
+  const tiers = creatorViewBonusTiers(campaign.viewBonusTiers ?? [], level);
   const matchedTier = matchViewBonusTier(views, tiers);
-  const remainingCap = viewBonusRemainingCap(
-    campaign.maxPayoutPerVideoToman,
-    basePayoutToman
-  );
+  const remainingCap = viewBonusRemainingCap(maxPayoutToman, basePayoutToman);
   const rawBonus = sumReachedViewBonusToman(views, tiers);
   const bonusToman = computeViewBonusToman(
     views,
     tiers,
-    campaign.maxPayoutPerVideoToman,
+    maxPayoutToman,
     basePayoutToman
   );
 

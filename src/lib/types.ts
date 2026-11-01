@@ -1,3 +1,5 @@
+import type { ShowcaseReelJson } from "@/lib/earn-submissions-types";
+
 export type Platform = "instagram";
 
 export type CampaignStatus = "draft" | "active" | "paused" | "ended";
@@ -34,12 +36,16 @@ export interface Campaign {
   totalBudgetToman: number;
   spentBudgetToman: number;
   deadline: string | null;
+  /** Until this time only early-access creator levels can join. */
+  earlyAccessUntil?: string | null;
   status: CampaignStatus;
   createdAt: string;
   trending?: boolean;
   /** BananaAI tool link; `{prompt}` is replaced by the chosen prompt. */
   toolUrl?: string | null;
   promptPack?: PromptPackItem[];
+  /** Featured winning reels, newest first. */
+  showcase?: ShowcaseReelJson[];
 }
 
 export interface Submission {
@@ -86,4 +92,7 @@ export interface Profile {
   verificationRequestedAt: string | null;
   bankSheba: string | null;
   bankAccountHolder: string | null;
+  /** Admin-marked: may ask for an SMS when a new campaign opens. */
+  campaignSmsEligible: boolean;
+  campaignSmsOptIn: boolean;
 }

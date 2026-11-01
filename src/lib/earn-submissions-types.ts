@@ -1,4 +1,4 @@
-import type { EarnSubmissionStatus } from "@/lib/earn";
+import type { CreatorLevelId, EarnSubmissionStatus } from "@/lib/earn";
 import type { PromptPackItem, ViewBonusTier } from "@/lib/types";
 
 export interface UserCampaignJson {
@@ -17,13 +17,25 @@ export interface UserCampaignJson {
   totalBudgetToman: number;
   spentBudgetToman: number;
   deadline: string | null;
+  earlyAccessUntil: string | null;
   status: string;
   createdAt: string;
   trending: boolean;
   toolUrl: string | null;
   promptPack: PromptPackItem[];
+  showcase: ShowcaseReelJson[];
   submittedCount: number;
   remainingSubmissions: number;
+}
+
+/** A finalized, paid reel an admin chose to show in the campaign gallery. */
+export interface ShowcaseReelJson {
+  id: string;
+  postUrl: string;
+  earnedToman: number;
+  views: number;
+  creatorName: string;
+  featuredAt: string;
 }
 
 export interface UserSubmissionJson {
@@ -42,6 +54,7 @@ export interface UserSubmissionJson {
   canResubmit: boolean;
   createdAt: string;
   resubmittedAt: string | null;
+  reviewSlaHours: number;
   /** When the creator may send day-7 insights (7 days after submitting). */
   day7OpensAt: string | null;
   /** The 7 days have passed, whether or not the creator can still send now. */
@@ -50,6 +63,9 @@ export interface UserSubmissionJson {
   day7ClaimedViews: number | null;
   day7ProofScreenshotUrl: string | null;
   day7ProofSubmittedAt: string | null;
+  /** When the post was approved (or last reviewed). */
+  reviewedAt: string | null;
+  finalizedAt: string | null;
 }
 
 export interface AdminSubmissionUserJson {
@@ -58,6 +74,8 @@ export interface AdminSubmissionUserJson {
   lastName: string;
   instagramHandle: string | null;
   mobileNumber: string;
+  creatorLevel: CreatorLevelId;
+  paidReels: number;
 }
 
 export interface AdminSubmissionCampaignJson {
@@ -85,8 +103,10 @@ export interface AdminSubmissionJson {
   basePaidAt: string | null;
   bonusPaidAt: string | null;
   finalizedAt: string | null;
+  featuredAt: string | null;
   createdAt: string;
   resubmittedAt: string | null;
+  reviewSlaHours: number;
   user: AdminSubmissionUserJson | null;
   campaign: AdminSubmissionCampaignJson | null;
 }

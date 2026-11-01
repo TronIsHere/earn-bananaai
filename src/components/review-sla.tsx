@@ -3,14 +3,16 @@
 import { useEffect, useState } from "react";
 import { Clock3 } from "lucide-react";
 import {
-  REVIEW_SLA_LABEL,
+  REVIEW_SLA_HOURS,
   countReviewSlaOverdue,
+  reviewSlaLabel,
   reviewSlaSnapshot,
+  type ReviewSlaStart,
   type ReviewSlaTone,
 } from "@/lib/earn";
 import { cn, formatDateTime, formatRemainingDuration } from "@/lib/utils";
 
-function useNow(intervalMs = 60_000) {
+export function useNow(intervalMs = 60_000) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), intervalMs);
@@ -19,13 +21,23 @@ function useNow(intervalMs = 60_000) {
   return now;
 }
 
+function overdueLabel(slaHours: number) {
+  return `مهلت ${slaHours.toLocaleString("fa-IR")} ساعته گذشته`;
+}
+
 const toneClass: Record<ReviewSlaTone, string> = {
   ok: "border-brand/25 bg-brand/10 text-brand",
   due_soon: "border-amber-500/30 bg-amber-500/10 text-amber-200",
   overdue: "border-rose-500/30 bg-rose-500/10 text-rose-200",
 };
 
-export function ReviewSlaPromise({ className }: { className?: string }) {
+export function ReviewSlaPromise({
+  slaHours = REVIEW_SLA_HOURS,
+  className,
+}: {
+  slaHours?: number;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -34,7 +46,7 @@ export function ReviewSlaPromise({ className }: { className?: string }) {
       )}
     >
       <Clock3 className="size-3" />
-      {REVIEW_SLA_LABEL}
+      {reviewSlaLabel(slaHours)}
     </span>
   );
 }
@@ -42,18 +54,20 @@ export function ReviewSlaPromise({ className }: { className?: string }) {
 /** User-facing deadline: a specific time, not a vague "pending". */
 export function ReviewSlaNotice({
   startedAt,
+  slaHours = REVIEW_SLA_HOURS,
   className,
 }: {
   startedAt?: string | null;
+  slaHours?: number;
   className?: string;
 }) {
   const now = useNow();
-  const sla = startedAt ? reviewSlaSnapshot(startedAt, now) : null;
+  const sla = startedAt ? reviewSlaSnapshot(startedAt, now, slaHours) : null;
 
   if (!sla) {
     return (
       <p className={cn("text-sm text-white/55", className)}>
-        {REVIEW_SLA_LABEL}. زمان دقیق نتیجه بعد از ثبت مشخص می‌شود.
+        {reviewSlaLabel(slaHours)}. زمان دقیق نتیجه بعد از ثبت مشخص می‌شود.
       </p>
     );
   }
@@ -61,14 +75,14 @@ export function ReviewSlaNotice({
   if (sla.tone === "overdue") {
     return (
       <p className={cn("text-sm text-amber-100/90", className)}>
-        مهلت ۴۸ ساعته گذشته. در اولویت صف بررسی است.
+        {overdueLabel(slaHours)}. در اولویت صف بررسی است.
       </p>
     );
   }
 
   return (
     <p className={cn("text-sm text-white/60", className)}>
-      {REVIEW_SLA_LABEL}. نتیجه تا{" "}
+      {reviewSlaLabel(slaHours)}. نتیجه تا{" "}
       <strong className="text-white">{formatDateTime(sla.dueAt)}</strong> اعلام
       می‌شود
       {sla.remainingMs > 0 ? (
@@ -85,19 +99,21 @@ export function ReviewSlaNotice({
 /** Admin queue badge: remaining time or SLA breach. */
 export function ReviewSlaBadge({
   startedAt,
+  slaHours = REVIEW_SLA_HOURS,
   className,
 }: {
   startedAt?: string | null;
+  slaHours?: number;
   className?: string;
 }) {
   const now = useNow();
-  const sla = startedAt ? reviewSlaSnapshot(startedAt, now) : null;
+  const sla = startedAt ? reviewSlaSnapshot(startedAt, now, slaHours) : null;
   if (!sla) return null;
 
   const label =
     sla.tone === "overdue"
-      ? "مهلت ۴۸ ساعته گذشته"
-      : `${REVIEW_SLA_LABEL} · ${formatRemainingDuration(sla.remainingMs)}`;
+      ? overdueLabel(slaHours)
+      : `${reviewSlaLabel(slaHours)} · ${formatRemainingDuration(sla.remainingMs)}`;
 
   return (
     <span
@@ -113,8 +129,13 @@ export function ReviewSlaBadge({
   );
 }
 
-export function reviewSlaCardClass(startedAt?: string | null) {
-  const sla = startedAt ? reviewSlaSnapshot(startedAt) : null;
+export function reviewSlaCardClass(
+  startedAt?: string | null,
+  slaHours = REVIEW_SLA_HOURS
+) {
+  const sla = startedAt
+    ? reviewSlaSnapshot(startedAt, new Date(), slaHours)
+    : null;
   if (sla?.tone === "overdue") return "border-rose-500/40";
   if (sla?.tone === "due_soon") return "border-amber-500/35";
   return "";
@@ -123,21 +144,21 @@ export function reviewSlaCardClass(startedAt?: string | null) {
 export function ReviewSlaQueueBanner({
   startedAts,
 }: {
-  startedAts: Array<string | null | undefined>;
+  startedAts: ReviewSlaStart[];
 }) {
   const now = useNow();
   const overdue = countReviewSlaOverdue(startedAts, now);
   if (overdue <= 0) {
     return (
       <p className="rounded-xl border border-brand/20 bg-brand/8 px-3 py-2 text-xs text-brand">
-        SLA تیم: {REVIEW_SLA_LABEL}. قدیمی‌ترین درخواست‌ها بالاترند.
+        SLA تیم: {reviewSlaLabel()}. نزدیک‌ترین مهلت‌ها بالاترند.
       </p>
     );
   }
   return (
     <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-      {overdue.toLocaleString("fa-IR")} مورد از مهلت ۴۸ ساعته گذشته. اول این‌ها
-      را بررسی کنید.
+      {overdue.toLocaleString("fa-IR")} مورد از مهلت بررسی گذشته. اول این‌ها را
+      بررسی کنید.
     </p>
   );
 }

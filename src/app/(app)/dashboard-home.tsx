@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpLeft, Flame, Loader2, Wand2 } from "lucide-react";
 import Link from "next/link";
+import { CampaignAlertOptIn } from "@/components/campaign-alert-optin";
 import { CampaignCard } from "@/components/campaign-card";
+import { CreatorLevelCard } from "@/components/creator-level";
 import { HowItWorks } from "@/components/how-it-works";
 import {
   OnboardingChecklist,
   buildOnboardingSteps,
 } from "@/components/onboarding-checklist";
 import { SectionBadge } from "@/components/section-badge";
+import { SubmissionNextSteps } from "@/components/submission-next-steps";
 import { useStore } from "@/components/store-provider";
 import {
   SubmissionStatusBadge,
@@ -18,6 +21,7 @@ import {
 import { WalletHero } from "@/components/wallet-hero";
 import { usePublicCampaigns } from "@/hooks/use-public-campaigns";
 import { brandGlassCard, brandGlassCardHover, sectionTitle } from "@/lib/brand";
+import type { CreatorLevelId } from "@/lib/earn";
 import type { UserSubmissionJson } from "@/lib/earn-submissions-types";
 import { cn, formatDate, formatToman } from "@/lib/utils";
 
@@ -26,6 +30,10 @@ export function DashboardHome() {
   const { campaigns, loading: campaignsLoading } = usePublicCampaigns();
   const [submissions, setSubmissions] = useState<UserSubmissionJson[] | null>(null);
   const [hasPendingPayout, setHasPendingPayout] = useState(false);
+  const [creatorLevel, setCreatorLevel] = useState<{
+    id: CreatorLevelId;
+    paidReels: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -38,12 +46,14 @@ export function DashboardHome() {
         ]);
         const subData = (await subRes.json()) as {
           submissions?: UserSubmissionJson[];
+          creatorLevel?: { id: CreatorLevelId; paidReels: number };
         };
         const payData = (await payRes.json().catch(() => ({}))) as {
           payouts?: { status: string }[];
         };
         if (cancelled) return;
         setSubmissions(subRes.ok ? (subData.submissions ?? []) : []);
+        setCreatorLevel(subRes.ok ? (subData.creatorLevel ?? null) : null);
         setHasPendingPayout(
           Boolean(payData.payouts?.some((row) => row.status === "pending"))
         );
@@ -110,6 +120,13 @@ export function DashboardHome() {
 
       {submissions !== null && <OnboardingChecklist steps={steps} />}
 
+      {creatorLevel && (
+        <CreatorLevelCard
+          level={creatorLevel.id}
+          paidReels={creatorLevel.paidReels}
+        />
+      )}
+
       {/* Campaigns */}
       <section id="campaigns" className="scroll-mt-24 space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -141,6 +158,7 @@ export function DashboardHome() {
               کمپین‌های جدید همین‌جا نمایش داده می‌شوند. تا آن موقع پیجت را تأیید
               کن تا آماده باشی.
             </p>
+            <CampaignAlertOptIn className="mt-5" />
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
@@ -149,6 +167,7 @@ export function DashboardHome() {
                 key={campaign.id}
                 campaign={campaign}
                 href={`/posts?campaign=${campaign.id}`}
+                creatorLevel={creatorLevel?.id}
               />
             ))}
           </div>
@@ -185,6 +204,7 @@ export function DashboardHome() {
                   {formatDate(sub.createdAt)}
                 </div>
                 <SubmissionTimeline status={sub.status} className="mt-4" />
+                <SubmissionNextSteps submission={sub} compact className="mt-3" />
                 <div className="mt-4 flex items-baseline justify-between border-t border-white/6 pt-3 text-xs text-white/50">
                   <span>پاداش این ریل</span>
                   <span className="earn-money text-base text-white">

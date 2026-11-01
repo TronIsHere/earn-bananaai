@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
   Banknote,
+  Crown,
   ScrollText,
   UserRoundCheck,
   Wallet,
@@ -17,6 +18,7 @@ import {
   sectionTitle,
 } from "@/lib/brand";
 import {
+  CREATOR_LEVELS,
   FIXABLE_REJECT_REASONS,
   MIN_PAID_VIEWS,
   MIN_PAYOUT_TOMAN,
@@ -42,6 +44,18 @@ const payRules = [
   `پاداش حدود ۷ روز بعد، بر اساس بازدید واقعی همان پست حساب می‌شود. زیر ${formatToman(MIN_PAID_VIEWS)} بازدید پرداختی نیست.`,
   "واریز نقدی جداست: بعد از رسیدن به حداقل برداشت، شبایت را یک بار ثبت کن تا دستی واریز شود.",
 ];
+
+function levelPerks(level: (typeof CREATOR_LEVELS)[number]): string {
+  if (level.minPaidReels === 0) {
+    return `بررسی ${formatToman(level.reviewSlaHours)} ساعته و سقف عادی هر کمپین.`;
+  }
+  const perks = [
+    `بررسی ${formatToman(level.reviewSlaHours)} ساعته`,
+    `پاداش هر ریل و سقف آن +${formatToman(level.payoutBoostPercent)}٪`,
+  ];
+  if (level.earlyAccess) perks.push("دسترسی زودهنگام به کمپین‌های داغ");
+  return `${perks.join("، ")}.`;
+}
 
 export default function RulesPage() {
   return (
@@ -107,6 +121,30 @@ export default function RulesPage() {
             >
               <span className="mt-2 size-1.5 shrink-0 rounded-full bg-rose-400" />
               {item}
+            </li>
+          ))}
+        </ul>
+      </RuleCard>
+
+      <RuleCard icon={Crown} title="سطح سازنده">
+        <p className="text-sm leading-relaxed text-white/65">
+          هر ریلی که پاداش گرفته، یک قدم سطحت را بالا می‌برد. سطح فقط برای خودت
+          نمایش داده می‌شود و رتبه‌بندی عمومی نداریم.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {CREATOR_LEVELS.map((level) => (
+            <li
+              key={level.id}
+              className="flex gap-2 text-sm leading-relaxed text-white/65"
+            >
+              <span className="mt-2 size-1.5 shrink-0 rounded-full bg-brand" />
+              <span>
+                <strong className="text-white">{level.label}</strong>
+                {level.minPaidReels > 0
+                  ? ` (از ${formatToman(level.minPaidReels)} ریل پولی): `
+                  : ": "}
+                {levelPerks(level)}
+              </span>
             </li>
           ))}
         </ul>

@@ -10,9 +10,11 @@ import {
   revokeEarnSubmissionApproval,
   SubmissionError,
 } from "@/lib/earn-submissions";
+import { setSubmissionFeatured, ShowcaseError } from "@/lib/earn-showcase";
 import { requireAdminSession } from "@/lib/session";
 import {
   enterDay7ViewsSchema,
+  featureSubmissionSchema,
   mongoIdSchema,
   reviewSubmissionSchema,
 } from "@/lib/validations";
@@ -97,6 +99,27 @@ export async function PATCH(
         );
       }
       console.error("Error entering day-7 views:", error);
+      return NextResponse.json({ error: "خطای داخلی سرور" }, { status: 500 });
+    }
+  }
+
+  const feature = featureSubmissionSchema.safeParse(body);
+  if (feature.success) {
+    try {
+      await setSubmissionFeatured({
+        submissionId: idParsed.data,
+        featured: feature.data.featured,
+      });
+      const submission = await getAdminSubmissionById(idParsed.data);
+      return NextResponse.json({ submission });
+    } catch (error) {
+      if (error instanceof ShowcaseError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: error.httpStatus }
+        );
+      }
+      console.error("Error featuring submission:", error);
       return NextResponse.json({ error: "خطای داخلی سرور" }, { status: 500 });
     }
   }

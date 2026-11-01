@@ -21,6 +21,8 @@ export interface IEarnCampaign {
   totalBudgetToman: number;
   spentBudgetToman: number;
   deadline: Date | null;
+  /** Until this time only early-access creator levels can join. */
+  earlyAccessUntil: Date | null;
   status: EarnCampaignStatus;
   platform: (typeof EARN_PLATFORMS)[number];
   trending: boolean;
@@ -113,6 +115,10 @@ const EarnCampaignSchema = new Schema<IEarnCampaign>(
       type: Date,
       default: null,
     },
+    earlyAccessUntil: {
+      type: Date,
+      default: null,
+    },
     status: {
       type: String,
       enum: EARN_CAMPAIGN_STATUSES,
@@ -162,7 +168,7 @@ const existingModel = mongoose.models.EarnCampaign as
   | undefined;
 if (
   existingModel &&
-  (!existingModel.schema.path("promptPack") ||
+  (!existingModel.schema.path("earlyAccessUntil") ||
     existingModel.schema.path("basePayoutToman"))
 ) {
   mongoose.deleteModel("EarnCampaign");

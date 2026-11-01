@@ -54,6 +54,16 @@ export function formatDate(iso: string | null | undefined) {
   }).format(new Date(iso));
 }
 
+/** Short day + month for tight UI: «۱۲ آبان». */
+export function formatDayMonth(iso: string | null | undefined) {
+  if (!iso) return "-";
+  return new Intl.DateTimeFormat("fa-IR", {
+    month: "long",
+    day: "numeric",
+    timeZone: "Asia/Tehran",
+  }).format(new Date(iso));
+}
+
 export function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "-";
   return new Intl.DateTimeFormat("fa-IR", {

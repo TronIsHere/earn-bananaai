@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  CalendarClock,
   Check,
   ExternalLink,
   Eye,
@@ -16,12 +15,18 @@ import {
   ShieldCheck,
   Wand2,
 } from "lucide-react";
+import { CampaignAlertOptIn } from "@/components/campaign-alert-optin";
 import { PlatformBadge } from "@/components/campaign-card";
 import { CampaignBudgetMeter } from "@/components/campaign-budget";
 import { CampaignPromptPack } from "@/components/campaign-prompt-pack";
-import { CampaignRequirements } from "@/components/campaign-requirements";
-import { ReviewSlaNotice, ReviewSlaPromise } from "@/components/review-sla";
+import {
+  RequirementsConfirm,
+  missingRequirements,
+} from "@/components/requirements-confirm";
+import { ReviewSlaPromise } from "@/components/review-sla";
 import { SectionBadge } from "@/components/section-badge";
+import { SubmissionNextSteps } from "@/components/submission-next-steps";
+import { WinningReels } from "@/components/winning-reels";
 import {
   SubmissionStatusBadge,
   SubmissionTimeline,
@@ -47,7 +52,16 @@ import {
   formatToman,
   formatTomanCompact,
 } from "@/lib/utils";
-import { MIN_PAID_VIEWS, REVIEW_SLA_HOURS, reviewDueAt } from "@/lib/earn";
+import {
+  creatorLevelById,
+  creatorMaxPayoutPerVideoToman,
+  EARLY_ACCESS_LEVEL,
+  isCampaignLockedForLevel,
+  MIN_PAID_VIEWS,
+  REVIEW_SLA_HOURS,
+  reviewDueAt,
+  type CreatorLevelId,
+} from "@/lib/earn";
 
 export default function PostsPage() {
   const { status: authStatus } = useSession();
@@ -62,6 +76,8 @@ export default function PostsPage() {
     status: string;
     handle: string | null;
   }>({ status: "none", handle: null });
+  const [creatorLevelId, setCreatorLevelId] = useState<CreatorLevelId>("starter");
+  const creatorLevel = creatorLevelById(creatorLevelId);
 
   const [campaignId, setCampaignId] = useState(highlight);
   const [postUrl, setPostUrl] = useState("");
@@ -70,6 +86,8 @@ export default function PostsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<string[]>([]);
+  const [showMissing, setShowMissing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +98,7 @@ export default function PostsPage() {
         submissions?: UserSubmissionJson[];
         campaigns?: UserCampaignJson[];
         verification?: { status: string; handle: string | null };
+        creatorLevel?: { id: CreatorLevelId; paidReels: number };
         error?: string;
       };
       if (!res.ok) {
@@ -89,6 +108,7 @@ export default function PostsPage() {
       setSubmissions(data.submissions ?? []);
       setCampaigns(data.campaigns ?? []);
       setVerification(data.verification ?? { status: "none", handle: null });
+      setCreatorLevelId(data.creatorLevel?.id ?? "starter");
     } catch {
       setError("بارگذاری ارسال‌ها ناموفق بود");
     } finally {
@@ -114,6 +134,9 @@ export default function PostsPage() {
   );
 
   const verified = verification.status === "verified";
+  const missing = selectedCampaign
+    ? missingRequirements(selectedCampaign, confirmed)
+    : [];
 
   const pickFile = (file: File | null) => {
     if (proofPreview) URL.revokeObjectURL(proofPreview);
@@ -143,6 +166,12 @@ export default function PostsPage() {
       setFormError("کمپین را انتخاب کنید.");
       return;
     }
+    if (selectedCampaign && isCampaignLockedForLevel(selectedCampaign, creatorLevel)) {
+      setFormError(
+        `این کمپین فعلاً فقط برای سطح ${EARLY_ACCESS_LEVEL.label} باز است.`
+      );
+      return;
+    }
     if (selectedCampaign && selectedCampaign.remainingSubmissions <= 0) {
       setFormError("به سقف تعداد ارسال این کمپین رسیده‌اید.");
       return;
@@ -156,6 +185,13 @@ export default function PostsPage() {
     }
     if (!proofFile) {
       setFormError("اسکرین‌شات اثبات را انتخاب کنید.");
+      return;
+    }
+    if (missing.length > 0) {
+      setShowMissing(true);
+      setFormError(
+        `${formatToman(missing.length)} شرط کمپین هنوز تیک نخورده. اگر در پستت نیست، اول پست را درست کن تا ارسالت رد نشود.`
+      );
       return;
     }
 
@@ -212,11 +248,14 @@ export default function PostsPage() {
       );
       setPostUrl("");
       pickFile(null);
+      setConfirmed([]);
+      setShowMissing(false);
       setFormSuccess(
         (() => {
-          const due = reviewDueAt(new Date());
+          const slaHours = data.submission?.reviewSlaHours ?? REVIEW_SLA_HOURS;
+          const due = reviewDueAt(new Date(), slaHours);
           return due
-            ? `ارسال ثبت شد. بررسی حداکثر ${REVIEW_SLA_HOURS.toLocaleString("fa-IR")} ساعت. نتیجه تا ${formatDateTime(due.toISOString())} اعلام می‌شود.`
+            ? `ارسال ثبت شد. بررسی حداکثر ${slaHours.toLocaleString("fa-IR")} ساعت. نتیجه تا ${formatDateTime(due.toISOString())} اعلام می‌شود.`
             : "ارسال ثبت شد و در صف بررسی قرار گرفت.";
         })()
       );
@@ -265,7 +304,7 @@ export default function PostsPage() {
             </Link>
           </p>
         </div>
-        <ReviewSlaPromise />
+        <ReviewSlaPromise slaHours={creatorLevel.reviewSlaHours} />
       </header>
 
       <section className={cn(brandGlassCard, "space-y-4 p-5 sm:p-6")}>
@@ -302,24 +341,37 @@ export default function PostsPage() {
         )}
 
         {campaigns.length === 0 ? (
-          <p className="text-sm text-white/45">
-            فعلاً کمپین فعالی برای ارسال وجود ندارد.
-          </p>
+          <div className="space-y-4">
+            <p className="text-sm text-white/45">
+              فعلاً کمپین فعالی برای ارسال وجود ندارد.
+            </p>
+            <CampaignAlertOptIn className="items-start" />
+          </div>
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <label className="block space-y-1.5">
               <span className="text-xs font-semibold text-white/55">۱. کمپین</span>
               <select
                 value={campaignId}
-                onChange={(event) => setCampaignId(event.target.value)}
+                onChange={(event) => {
+                  setCampaignId(event.target.value);
+                  setConfirmed([]);
+                  setShowMissing(false);
+                }}
                 className={cn(formInput, formFocus)}
               >
                 <option value="">انتخاب کمپین</option>
-                {campaigns.map((campaign) => (
-                  <option key={campaign.id} value={campaign.id}>
-                    {campaign.title} ({formatToman(campaign.remainingSubmissions)} ارسال باقی)
-                  </option>
-                ))}
+                {campaigns.map((campaign) => {
+                  const locked = isCampaignLockedForLevel(campaign, creatorLevel);
+                  return (
+                    <option key={campaign.id} value={campaign.id} disabled={locked}>
+                      {campaign.title}{" "}
+                      {locked
+                        ? `(زودهنگام برای سطح ${EARLY_ACCESS_LEVEL.label}، از ${formatDate(campaign.earlyAccessUntil)} برای همه)`
+                        : `(${formatToman(campaign.remainingSubmissions)} ارسال باقی)`}
+                    </option>
+                  );
+                })}
               </select>
             </label>
 
@@ -330,7 +382,12 @@ export default function PostsPage() {
                   <div className="earn-money text-xl text-white">
                     <span className="ml-1.5 text-sm font-medium text-white/35">تا</span>
                     <span className="text-brand">
-                      {formatTomanCompact(selectedCampaign.maxPayoutPerVideoToman)}
+                      {formatTomanCompact(
+                        creatorMaxPayoutPerVideoToman(
+                          selectedCampaign.maxPayoutPerVideoToman,
+                          creatorLevel
+                        )
+                      )}
                     </span>
                     <span className="mr-1 text-[11px] font-medium text-white/40">تومان</span>
                   </div>
@@ -345,8 +402,15 @@ export default function PostsPage() {
                   totalBudgetToman={selectedCampaign.totalBudgetToman}
                   compact
                 />
+                {selectedCampaign.showcase.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-white/60">
+                      ریل‌های برنده این کمپین
+                    </div>
+                    <WinningReels reels={selectedCampaign.showcase} />
+                  </div>
+                )}
                 <CampaignPromptPack campaign={selectedCampaign} />
-                <CampaignRequirements campaign={selectedCampaign} />
               </div>
             )}
 
@@ -395,6 +459,25 @@ export default function PostsPage() {
               )}
             </label>
 
+            {selectedCampaign && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-white/55">
+                  ۴. قبل از ارسال، پستت را چک کن
+                </span>
+                <RequirementsConfirm
+                  campaign={selectedCampaign}
+                  confirmed={confirmed}
+                  onChange={(next) => {
+                    setConfirmed(next);
+                    if (formError && missingRequirements(selectedCampaign, next).length === 0) {
+                      setFormError(null);
+                    }
+                  }}
+                  showMissing={showMissing}
+                />
+              </div>
+            )}
+
             {formError && (
               <p className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
                 {formError}
@@ -412,7 +495,11 @@ export default function PostsPage() {
               className={cn(brandCta, "h-12 w-full px-5 text-sm sm:w-auto")}
             >
               {submitting && <Loader2 className="size-4 animate-spin" />}
-              {submitting ? "در حال ارسال..." : "ثبت و ارسال به بررسی"}
+              {submitting
+                ? "در حال ارسال..."
+                : missing.length > 0
+                  ? `${formatToman(missing.length)} شرط دیگر را تیک بزن`
+                  : "ثبت و ارسال به بررسی"}
             </button>
           </form>
         )}
@@ -453,17 +540,17 @@ export default function PostsPage() {
                   <PlatformBadge platform={sub.platform} />
                   <SubmissionStatusBadge status={sub.status} />
                 </div>
-                <SubmissionTimeline status={sub.status} className="mt-4 max-w-md" />
-                {sub.status === "pending" && (
-                  <div className="mt-3">
-                    <ReviewSlaNotice startedAt={sub.resubmittedAt ?? sub.createdAt} />
-                  </div>
-                )}
-                {sub.status === "pending" && sub.resubmitCount > 0 && (
-                  <p className="mt-2 text-sm text-white/55">
-                    اصلاح شما دوباره در صف بررسی است.
-                  </p>
-                )}
+                <SubmissionTimeline
+                  status={sub.status}
+                  dates={{
+                    pending: sub.resubmittedAt ?? sub.createdAt,
+                    approved: sub.reviewedAt,
+                    bonus_pending: sub.day7OpensAt,
+                    finalized: sub.finalizedAt,
+                  }}
+                  className="mt-4 max-w-md"
+                />
+                <SubmissionNextSteps submission={sub} className="mt-3 max-w-md" />
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-white/40">
                   <span>{formatDate(sub.createdAt)}</span>
                   <span className="inline-flex items-center gap-1">
@@ -573,6 +660,9 @@ function ResubmitForm({
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<string[]>([]);
+  const [showMissing, setShowMissing] = useState(false);
+  const missing = campaign ? missingRequirements(campaign, confirmed) : [];
 
   useEffect(() => {
     return () => {
@@ -601,6 +691,13 @@ function ResubmitForm({
 
     if (!proofFile) {
       setError("اسکرین‌شات تازه از پست اصلاح‌شده لازم است.");
+      return;
+    }
+    if (missing.length > 0) {
+      setShowMissing(true);
+      setError(
+        `${formatToman(missing.length)} شرط کمپین هنوز تیک نخورده. این آخرین فرصت اصلاح است؛ همه را در پست چک کن.`
+      );
       return;
     }
     const normalizedUrl = normalizeInstagramPostUrl(postUrl);
@@ -666,7 +763,14 @@ function ResubmitForm({
         (هشتگ، منشن یا کپشن)، اسکرین‌شات تازه بگیرید و دوباره بفرستید. ارسال جدید
         لازم نیست.
       </p>
-      {campaign && <CampaignRequirements campaign={campaign} />}
+      {campaign && (
+        <RequirementsConfirm
+          campaign={campaign}
+          confirmed={confirmed}
+          onChange={setConfirmed}
+          showMissing={showMissing}
+        />
+      )}
       <label className="block space-y-1.5">
         <span className="text-xs text-white/50">لینک پست اینستاگرام</span>
         <input
@@ -714,7 +818,11 @@ function ResubmitForm({
         className={cn(brandCta, "px-4 py-2.5 text-sm disabled:opacity-50")}
       >
         {submitting && <Loader2 className="size-4 animate-spin" />}
-        {submitting ? "در حال ارسال..." : "اصلاح و ارسال مجدد"}
+        {submitting
+          ? "در حال ارسال..."
+          : missing.length > 0
+            ? `${formatToman(missing.length)} شرط دیگر را تیک بزن`
+            : "اصلاح و ارسال مجدد"}
       </button>
     </form>
   );
@@ -822,23 +930,9 @@ function Day7InsightsCard({
     }
   };
 
-  if (!submission.canSubmitInsights && !sent) {
-    // Past the opening date but not submittable: the bonus is being finalized.
-    if (submission.day7InsightsOpen) return null;
-    return (
-      <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 text-xs text-white/55">
-        <CalendarClock className="mt-0.5 size-4 shrink-0 text-sky-300" />
-        <p>
-          اینسایت روز هفتم از{" "}
-          <strong className="text-white/80">
-            {formatDate(submission.day7OpensAt)}
-          </strong>{" "}
-          باز می‌شود. آن روز عدد بازدید پست را از اینسایت اینستاگرام بخوان و
-          اسکرین‌شاتش را بفرست تا پاداش بازدیدت زودتر نهایی شود.
-        </p>
-      </div>
-    );
-  }
+  // Before day 7 the countdown lives in SubmissionNextSteps; after it, with
+  // nothing sent and nothing submittable, the bonus is being finalized.
+  if (!submission.canSubmitInsights && !sent) return null;
 
   if (sent && !editing) {
     return (

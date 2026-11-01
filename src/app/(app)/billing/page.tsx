@@ -9,6 +9,7 @@ import {
   Hourglass,
   Landmark,
   Loader2,
+  Share2,
   Wallet,
   XCircle,
 } from "lucide-react";
@@ -17,12 +18,14 @@ import {
   BankDetailsSummary,
 } from "@/components/bank-details-form";
 import { Money } from "@/components/money";
+import { PayoutShareCard } from "@/components/payout-share-card";
 import { ProgressBar } from "@/components/progress-bar";
 import { SectionBadge } from "@/components/section-badge";
 import { useStore } from "@/components/store-provider";
 import {
   brandCta,
   brandCtaGlow,
+  brandCtaInk,
   brandGlassCard,
   brandMeshPanel,
   formFocus,
@@ -59,6 +62,9 @@ const statusClass: Record<string, string> = {
   rejected: "border-rose-500/30 bg-rose-500/12 text-rose-200",
 };
 
+/** A paid payout this recent gets a "show it off" nudge above the list. */
+const SHARE_NUDGE_MS = 14 * 24 * 60 * 60 * 1000;
+
 const statusIcon: Record<string, typeof Banknote> = {
   paid: CheckCircle2,
   pending: Hourglass,
@@ -75,6 +81,8 @@ export default function BillingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [shareRow, setShareRow] = useState<PayoutRow | null>(null);
+  const [openedAt] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +115,13 @@ export default function BillingPage() {
     () => payouts.find((row) => row.status === "pending") ?? null,
     [payouts]
   );
+  const recentPaid = useMemo(() => {
+    const row = payouts.find((p) => p.status === "paid" && p.paidAt);
+    if (!row?.paidAt) return null;
+    return openedAt - new Date(row.paidAt).getTime() < SHARE_NUDGE_MS
+      ? row
+      : null;
+  }, [payouts, openedAt]);
   const available = state.wallet.available;
   const hasBank = Boolean(state.profile.bankSheba);
   const canPayout = available >= MIN_PAYOUT_TOMAN && !pending;
@@ -355,6 +370,26 @@ export default function BillingPage() {
 
       <section className="space-y-3">
         <h2 className="text-base font-bold text-white">درخواست‌های واریز</h2>
+        {recentPaid && (
+          <div className="earn-lime flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-soft/40 px-4 py-3.5 text-brand-ink">
+            <div>
+              <div className="text-sm font-extrabold">
+                {formatToman(recentPaid.amount)} تومان به حسابت واریز شد
+              </div>
+              <p className="mt-0.5 text-xs text-brand-ink/70">
+                کارتش را استوری کن تا دوستانت هم بدانند.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShareRow(recentPaid)}
+              className={cn(brandCtaInk, "px-4 py-2 text-sm")}
+            >
+              <Share2 className="size-4" />
+              ساخت کارت
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="size-6 animate-spin text-brand" />
@@ -424,6 +459,16 @@ export default function BillingPage() {
                     >
                       {statusLabel[row.status]}
                     </span>
+                    {row.status === "paid" && (
+                      <button
+                        type="button"
+                        onClick={() => setShareRow(row)}
+                        className="mr-1.5 mt-1 inline-flex items-center gap-1 rounded-full border border-brand/25 px-2 py-0.5 text-[10px] font-medium text-brand hover:bg-brand/10"
+                      >
+                        <Share2 className="size-3" />
+                        کارت
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -431,6 +476,15 @@ export default function BillingPage() {
           </div>
         )}
       </section>
+
+      {shareRow && (
+        <PayoutShareCard
+          amount={shareRow.amount}
+          paidAt={shareRow.paidAt}
+          handle={state.profile.instagramHandle}
+          onClose={() => setShareRow(null)}
+        />
+      )}
     </div>
   );
 }

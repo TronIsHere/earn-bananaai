@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   const oldestFirst = statusParam === "pending";
   const users = await query
     .select(
-      "firstName lastName mobileNumber earnInstagramHandle earnVerificationCode earnVerificationStatus earnVerificationNote earnVerifiedAt earnVerificationRequestedAt updatedAt createdAt"
+      "firstName lastName mobileNumber earnInstagramHandle earnVerificationCode earnVerificationStatus earnVerificationNote earnVerifiedAt earnVerificationRequestedAt earnCampaignSmsEligible earnCampaignSmsOptIn updatedAt createdAt"
     )
     .sort(
       oldestFirst
@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
       lastName: user.lastName,
       mobileNumber: user.mobileNumber,
       updatedAt: user.updatedAt.toISOString(),
+      campaignSmsEligible: Boolean(user.earnCampaignSmsEligible),
+      campaignSmsOptIn: Boolean(user.earnCampaignSmsOptIn),
       ...toVerificationDto(user),
     })),
   });
